@@ -880,7 +880,6 @@ void Engine::shared_scratch() {
     u_ = fbuf(ff);
     h_ = fbuf(ff);
     d_ = fbuf((size_t) kSumRows * n_embd_);   // the routed experts of a few tokens, until they are added up
-    cpu_ = fbuf(e);
     rl_ = fbuf(n * n_expert_);
     logits_ = fbuf((size_t) n_vocab_);
     if (rows_ >= kStageRows && bf16_max_ > 0) wf_ = fbuf(bf16_max_);   // a BF16 matrix as floats, for lin()
@@ -904,8 +903,7 @@ void Engine::alloc() {
                               "the recurrent state");
     if (draft_) {
         hn_ = state_ + rec_n_;
-        guess_ = (Likeliest*) dmalloc(sizeof(Likeliest), "scratch");
-        h_guess_ = (Likeliest*) hmalloc(sizeof(Likeliest), "pinned memory");
+        h_guess_ = (Likeliest*) hmalloc(sizeof(Likeliest), "pinned memory");   // likeliest() writes it
     }
     // window(): the state after tokens of it, for keep(), and every token's logits
     snap_places_ = snaps_spread() ? std::min(opt_.window - 1, kSnapPlaces) : opt_.window - 1;
@@ -1125,10 +1123,8 @@ void Engine::router_scores(const Layer& L, int n) { lin(L.gate_inp, xn_, rl_, n,
 
 // The router's scores, and the copies of them and of the experts' input to the host.
 void Engine::moe_router(const Layer& L, int n) {
-    const size_t rows = (size_t) n;
     router_scores(L, n);
-    ck(cudaMemcpyAsync(h_rl_, rl_, rows * n_expert_ * sizeof(float), cudaMemcpyDeviceToHost, cs(st_)), "router");
-    ck(cudaMemcpyAsync(h_x_, xn_, rows * n_embd_ * sizeof(float), cudaMemcpyDeviceToHost, cs(st_)), "router");
+    copy2(rl_, h_rl_, n * n_expert_, xn_, h_x_, n * n_embd_, st_);
 }
 
 // The routed experts of tokens that come a few at a time.  moe_router() is on its way, with ev_ behind it.  True
@@ -1235,11 +1231,7 @@ bool Engine::moe(Layer& L, int il, int n, const std::function<void()>* first) {
 }
 
 // The CPU's experts of n tokens into the routed experts' sum.
-void Engine::moe_add(int n) {
-    ck(cudaMemcpyAsync(cpu_, h_cpu_, (size_t) n * n_embd_ * sizeof(float), cudaMemcpyHostToDevice, cs(st_)),
-       "host experts");
-    axpy(cpu_, 1.f, fo_, n * n_embd_, true, st_);
-}
+void Engine::moe_add(int n) { axpy(h_cpu_, 1.f, fo_, n * n_embd_, true, st_); }
 
 // m experts from the mapped file into the staging buffer: gate and up of each back to back from the start, the
 // downs after them.  The two pinned buffers take turns, so the workers fill one while the other uploads.
@@ -1533,7 +1525,8 @@ void Engine::run(const int32_t* tokens, int n) {
             for (size_t i = 0; i < e_row; ++i) r[i] *= scale;
         for (int h = 1; h < streams(); ++h) std::memcpy(r + (size_t) h * e_row, r, e_row * sizeof(float));
     }
-    ck(cudaMemcpyAsync(r_, h_r_, (size_t) n * r_row * sizeof(float), cudaMemcpyHostToDevice, cs(st_)), "embed");
+    if (n < kStageRows) copy2(h_r_, r_, n * (int) r_row, nullptr, nullptr, 0, st_);
+    else ck(cudaMemcpyAsync(r_, h_r_, (size_t) n * r_row * sizeof(float), cudaMemcpyHostToDevice, cs(st_)), "embed");
 
     // A token alone, or a window of guessed ones, hands the card the same launches every time, some thirty a
     // layer up to the router, and they cost this thread more than the card.  They are recorded once, a graph a
@@ -1553,8 +1546,7 @@ void Engine::run(const int32_t* tokens, int n) {
             h_at_[2 * t] = pos_ + t;
             h_at_[2 * t + 1] = turn(pos_ + t);
         }
-        ck(cudaMemcpyAsync(at_, h_at_, (size_t) n * 2 * sizeof(long long), cudaMemcpyHostToDevice, cs(st_)),
-           "position");
+        copy2(h_at_, at_, n * 2 * (int) (sizeof(long long) / 4), nullptr, nullptr, 0, st_);
     }
     // A layer's launches around its routed experts.  up(): to its router's copy, with the shared expert behind it.
     // tail(): what the layer does with the experts' sum.  `rec` numbers the recording of m tokens' launches: a
@@ -1675,7 +1667,6 @@ void Engine::shift_rows(ptrdiff_t by) {
     r_ += by * streams() * e;
     xn_ += by * e;
     fo_ += by * e;
-    cpu_ += by * e;
     rl_ += by * n_expert_;
     xq_ = (uint8_t*) xq_ + by * (ptrdiff_t) kernels::native_q8_1_bytes(n_embd_);
     h_rl_ += by * n_expert_;
@@ -1937,19 +1928,21 @@ void Engine::window(const int32_t* tokens, int t) {
 bool Engine::pick_way(int t) {
     const Way& whole = way_[0][t];
     const Way& split = way_[1][t];
-    const int call = way_calls_[t]++;
-    if (split.n < kWayFirst || whole.n < kWayFirst)
-        return split.n <= whole.n;   // in turn, the halves first: a window of two was always in halves
-    const bool halves = split.ms <= whole.ms;
-    return call % kWayAgain == 0 ? !halves : halves;
+    if (split.n < kWayFirst || whole.n < kWayFirst) return split.n < whole.n;   // in turn, the whole way first
+    const bool halves = split.ms < whole.ms;
+    if (++way_calls_[t] < std::min(kWayAgain << way_backoff_[t], kWayAgainMost)) return halves;
+    way_calls_[t] = 0;
+    if ((kWayAgain << way_backoff_[t]) < kWayAgainMost) ++way_backoff_[t];
+    return !halves;
 }
 
 void Engine::took_way(int t, double ms) {
     Way& w = way_[halves_ ? 1 : 0][t];
     const Way& other = way_[halves_ ? 0 : 1][t];
-    const double weight = other.n >= kWayFirst && w.ms > other.ms ? kWayBehind : kWayWeight;
-    w.ms = w.n < kWayFirst ? (w.ms * w.n + ms) / (w.n + 1) : w.ms + weight * (ms - w.ms);
+    const bool behind = other.n >= kWayFirst && w.ms > other.ms;
+    w.ms = w.n < kWayFirst ? (w.ms * w.n + ms) / (w.n + 1) : w.ms + (behind ? kWayBehind : kWayWeight) * (ms - w.ms);
     ++w.n;
+    if (behind && w.ms < other.ms) way_calls_[t] = way_backoff_[t] = 0;   // the other way is behind now
 }
 
 void Engine::keep(int n) {
@@ -1989,7 +1982,8 @@ void Engine::keep(int n) {
 float* Engine::draft_input(const int32_t* tokens, int64_t row, const float* h, int n) {
     const size_t e = (size_t) n_embd_, rows = (size_t) n;
     for (int t = 0; t < n; ++t) input(tokens[t], row + t, h_r_ + (size_t) t * e);
-    ck(cudaMemcpyAsync(cur_, h_r_, rows * e * sizeof(float), cudaMemcpyHostToDevice, cs(st_)), "embed");
+    if (n < kStageRows) copy2(h_r_, cur_, n * n_embd_, nullptr, nullptr, 0, st_);
+    else ck(cudaMemcpyAsync(cur_, h_r_, rows * e * sizeof(float), cudaMemcpyHostToDevice, cs(st_)), "embed");
     rms_norm(cur_, fp(d_enorm_), r_, n_embd_, n, rms_eps_, st_, 2 * n_embd_);
     rms_norm(h, fp(d_hnorm_), r_ + e, n_embd_, n, rms_eps_, st_, 2 * n_embd_);
     float* x = r_ + 2 * rows * e;
@@ -2008,7 +2002,7 @@ void Engine::draft_rows(const int32_t* tokens, int first, int n) {
         draft_input(tokens + first, pos_ + first, hn_ + (size_t) first * e, n - first);
         block_rows(pos_ + first, n - first);
     }
-    ck(cudaMemcpyAsync(hn_, hn_ + (size_t) n * e, e * sizeof(float), cudaMemcpyDeviceToDevice, cs(st_)), "draft");
+    copy2(hn_ + (size_t) n * e, hn_, n_embd_, nullptr, nullptr, 0, st_);
     ahead_pos_ = -1;
 }
 
@@ -2029,7 +2023,9 @@ void Engine::draft_step(int32_t token, int i) {
     if (moe(L, n_layer_, 1)) moe_add(1);
     axpy(fo_, 1.f, x, n_embd_, true, st_);
     rms_norm(x, fp(d_head_), own, n_embd_, 1, rms_eps_, st_);
-    lin(output_, own, logits_, 1);
+    Dev head = output_;   // the matrix's first rows are the common tokens'
+    head.n_out = draft_rows();
+    lin(head, own, logits_, 1);
     finish_logits(logits_, 1);
 }
 
@@ -2041,8 +2037,7 @@ int32_t Engine::draft(int32_t token, int i, float* prob) {
     draft_step(token, i);
     // The guess and its probability are found on the card.  On the host a vocabulary's softmax takes up to 2 ms
     // where the block is unsure, four times what the block takes.
-    likeliest(logits_, n_vocab_, guess_, st_);
-    ck(cudaMemcpyAsync(h_guess_, guess_, sizeof(Likeliest), cudaMemcpyDeviceToHost, cs(st_)), "draft");
+    likeliest(logits_, draft_rows(), h_guess_, st_);
     ck(cudaStreamSynchronize(cs(st_)), "draft");
     if (i == 0) {
         ahead_pos_ = pos_;

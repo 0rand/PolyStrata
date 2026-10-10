@@ -519,13 +519,11 @@ void Gemma4::finish_logits(float* logits, int rows) {
 void Gemma4::draft_step(int32_t token, int i) {
     if (pos_ < 1) throw std::logic_error("draft: the sequence has no token yet");
     const int e = n_embd_, a = d_embd_;
-    const size_t e_bytes = (size_t) e * sizeof(float);
     float* own = hn_ + e;
     embed(token, h_r_);
     const float scale = embed_scale();
     for (int k = 0; k < e; ++k) h_r_[k] *= scale;
-    ck(cudaMemcpyAsync(dxh_, h_r_, e_bytes, cudaMemcpyHostToDevice, cs(st_)), "draft");
-    ck(cudaMemcpyAsync(dxh_ + e, i == 0 ? hn_ : own, e_bytes, cudaMemcpyDeviceToDevice, cs(st_)), "draft");
+    copy2(h_r_, dxh_, e, i == 0 ? hn_ : own, dxh_ + e, e, st_);
     float* x = r_;
     lin(d_pre_, dxh_, x, 1);
     for (const Guess& G : guess_) {
@@ -551,7 +549,9 @@ void Gemma4::draft_step(int32_t token, int i) {
         if (G.out_scale != 1.f) axpy(x, G.out_scale, x, a, false, st_);
     }
     rms_norm(x, fp(d_out_norm_), xn_, a, 1, d_eps_, st_);
-    lin(d_table_, xn_, logits_, 1);
+    Dev table = d_table_;   // the matrix's first rows are the common tokens'
+    table.n_out = draft_rows();
+    lin(table, xn_, logits_, 1);
     lin(d_post_, xn_, own, 1);
 }
 

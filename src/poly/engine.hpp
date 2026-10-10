@@ -47,13 +47,15 @@ struct Options {
     int stage_ahead = 256;        ///< from this many tokens, a call routes to most of a layer's experts, and the
                                   ///< ones that are not cached start their copy before the layer has routed; in a
                                   ///< read of several calls every call does; 0: never
-    int expert_swaps = 16;        ///< experts on their way into the cache at a time while an answer is written, each
+    int expert_swaps = 64;        ///< experts on their way into the cache at a time while an answer is written, each
                                   ///< to the slot of one the answer uses less; 0: the cache stays as it was loaded
     bool stay_near = true;        ///< with several NUMA nodes, keep the CPU threads on the one that holds the experts
     bool graphs = true;           ///< a token's fixed launches are recorded once, a CUDA graph a layer, and replayed
     int window = 0;               ///< the most tokens window() takes: the known one and guesses after it; 1: none;
                                   ///< 0: 8, or 4 where every guess keeps a copy of the recurrent state
     bool draft = true;            ///< run the block that guesses ahead, when there is one and window is above 1
+    int draft_vocab = -1;         ///< the guesses come from the vocabulary's first this many tokens; 0: all of it;
+                                  ///< -1: as many as the architecture's vocabulary has in order of use (guess_vocab())
     std::string draft_model;      ///< a file of the same model to take that block from, when the model's has none;
                                   ///< for an architecture that guesses with a model of its own, that model's file
 };
@@ -131,6 +133,12 @@ public:
     void load(const Options& o);
 
     int n_vocab() const { return n_vocab_; }
+    /// The rows of the output a guess is picked from.  A guess that is never right costs a window's place and no
+    /// token, so the rare tokens may be left out, where the vocabulary has the common ones first.
+    int draft_rows() const {
+        const int v = opt_.draft_vocab >= 0 ? opt_.draft_vocab : guess_vocab();
+        return v > 0 ? std::min(v, n_vocab_) : n_vocab_;
+    }
     int n_embd() const { return n_embd_; }
     int max_context() const { return opt_.max_context; }
     int threads() const { return workers_ ? workers_->threads() : 0; }
@@ -253,6 +261,9 @@ protected:
     /// Whether the recurrent layers leave their state after any tokens of a call, and not only after its first
     /// ones.  A window then takes more tokens than it has places for their states (snap_tokens()).
     virtual bool snaps_spread() const { return false; }
+    /// How many of the vocabulary's first tokens hold nearly every token an answer writes; 0: the order says
+    /// nothing of that.
+    virtual int guess_vocab() const { return 0; }
     /// The layers' places in state_, and the attention's caches: a row a position.
     virtual void alloc_caches() = 0;
     /// The scratch of the architecture's own kernels, a fbuf() each.  Called twice: the first time only counts.
@@ -420,7 +431,7 @@ protected:
     // The draft block reads the model's output for the token before each of its tokens.  Row 0 is the output of
     // the last token of the sequence, and the outputs of the tokens of the call under way follow it.
     float* hn_ = nullptr;
-    Likeliest *guess_ = nullptr, *h_guess_ = nullptr;   ///< a guess and its probability: VRAM and pinned
+    Likeliest* h_guess_ = nullptr;   ///< a guess and its probability, pinned
     int32_t win_tok_[8] = {};           ///< the window's tokens, for keep()
     int64_t ahead_pos_ = -1;            ///< draft() has left the block's row of this position as its token leaves it,
     int32_t ahead_tok_ = 0;             ///< which is this one
@@ -438,7 +449,8 @@ protected:
         int n = 0;               ///< how many were timed
     };
     Way way_[2][9];              ///< [in halves][the window's tokens]
-    int way_calls_[9] = {};      ///< windows of each size so far
+    int way_calls_[9] = {};      ///< windows of each size since the way behind had one
+    int way_backoff_[9] = {};    ///< the way behind waits kWayAgain << this many windows of the size
     bool halves_ = false;        ///< the way of the window under way
     float *wlogits_ = nullptr, *h_wlogits_ = nullptr;   ///< a window's logits, token after token: VRAM and pinned
     int cached_ = 0;
@@ -447,7 +459,7 @@ protected:
     float *r_ = nullptr, *cur_ = nullptr, *xn_ = nullptr, *ao_ = nullptr, *fo_ = nullptr;
     float* wf_ = nullptr;      ///< the largest BF16 matrix as floats: lin() multiplies a prompt batch by cuBLAS
     size_t bf16_max_ = 0;      ///< that matrix's values
-    float *g_ = nullptr, *u_ = nullptr, *h_ = nullptr, *d_ = nullptr, *cpu_ = nullptr, *rl_ = nullptr,
+    float *g_ = nullptr, *u_ = nullptr, *h_ = nullptr, *d_ = nullptr, *rl_ = nullptr,
           *logits_ = nullptr;
     void *xq_ = nullptr, *q8_ = nullptr;
 

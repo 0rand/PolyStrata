@@ -115,6 +115,10 @@ void geglu_rows(const float* gate_up, float* out, int n, int rows, void* stream)
 void moe_sum(const float* x, const float* w, float* acc, int n, int n_used, int rows, void* stream);
 /// acc = x * a, or acc += x * a when `add`.
 void axpy(const float* x, float a, float* acc, int n, bool add, void* stream);
+/// y = x for two runs of 4-byte words, n0 and n1 of them, in one launch.  Pinned host memory is the card's to read
+/// and write too, and a kernel's copy to or from it has none of the wait that a copy engine's has on Windows,
+/// some 25 microseconds between it and the launches beside it.
+void copy2(const void* x0, void* y0, int n0, const void* x1, void* y1, int n1, void* stream);
 /// Up to 32 vectors of n values, each times its weight into its own sum, one after the other: acc[k] += x[k] * w[k]
 /// for k = 0, 1, ...  Two of them may have the same sum.
 struct ScaledRows {

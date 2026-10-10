@@ -25,6 +25,9 @@ protected:
     void check_draft_block() override;
     size_t recurrent_floats() const override;
     bool snaps_spread() const override { return true; }
+    // English answers write no token past 77,000, Chinese prose one in twenty past 131,072, and guesses from the
+    // first 131,072 still write a Chinese answer faster than from all 248,320
+    int guess_vocab() const override { return 131072; }
     void save_layer(int il, int64_t pos, uint8_t* dst) override;
     void alloc_caches() override;
     void assign_scratch() override;

@@ -43,12 +43,13 @@ constexpr size_t kTail = 256;
 // noisy, and an upload gets in the way of the work: a slot goes to an expert that will clearly be used more.
 constexpr float kSwapMin = 2.f;
 constexpr int kSwapHalf = 128;
-// Engine::pick_way(): each way of a window is timed this many times before the faster one is taken, the other
-// gets every kWayAgain-th window of that size from then on, and a time counts kWayWeight against the ones before.
-// A time of the way behind counts kWayBehind, since it has one where the other has kWayAgain: what a way takes
-// moves, most in an answer's first windows, while the cache comes to hold the answer's experts.
+// Engine::pick_way(): each way of a window is timed this many times before the faster one is taken.  What a way
+// takes moves, most in an answer's first windows, while the cache comes to hold the answer's experts, so the way
+// behind is timed again after kWayAgain windows of that size, then after twice as many each time it is still
+// behind, up to kWayAgainMost.  A time counts kWayWeight against the ones before, and one of the way behind
+// kWayBehind, since it has fewer and older ones.
 constexpr int kWayFirst = 3;
-constexpr int kWayAgain = 32;
+constexpr int kWayAgain = 4, kWayAgainMost = 64;
 constexpr double kWayWeight = 0.125, kWayBehind = 0.5;
 
 // window(): the recurrent states a window leaves when its layers can leave them after any of its tokens

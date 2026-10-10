@@ -737,10 +737,12 @@ void usage() {
                  "  --no-draft             do not run the block that guesses ahead\n"
                  "  --draft-model FILE     a file of the same model to take that block from, when --model has none;\n"
                  "                         for Gemma 4, its draft model (a gemma4-assistant file)\n"
+                 "  --draft-vocab N        the block guesses among the vocabulary's first N tokens (default:\n"
+                 "                         131072 for Qwen3.6 and Ornith, all of it for the others; 0 = all)\n"
                  "  --no-graphs            launch a token's kernels one by one (default: a layer's are recorded once\n"
                  "                         as a CUDA graph and replayed)\n"
                  "  --expert-swaps N       while an answer is written, up to N experts it keeps using are on their way\n"
-                 "                         into VRAM, in place of cached ones it uses less (default 16, 0 = the cache\n"
+                 "                         into VRAM, in place of cached ones it uses less (default 64, 0 = the cache\n"
                  "                         stays as it was loaded)\n"
                  "  --prompt-batch N       prompt tokens read at a time (default 1024); about 1.4 MiB of VRAM each\n"
                  "  --stage-mib N          VRAM the experts outside the cache pass through in a prompt batch (default\n"
@@ -813,6 +815,7 @@ int main(int argc, char** argv) {
         else if (a == "--no-draft") o.draft = false;
         else if (a == "--draft-model") o.draft_model = val();
         else if (a == "--expert-swaps") o.expert_swaps = std::atoi(val());
+        else if (a == "--draft-vocab") o.draft_vocab = std::atoi(val());
         else if (a == "--prompt-batch") o.prompt_batch = std::atoi(val());
         else if (a == "--stage-mib") o.stage_mib = std::atoi(val());
         else if (a == "--stage-ahead") o.stage_ahead = std::atoi(val());
