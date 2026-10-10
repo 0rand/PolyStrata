@@ -433,6 +433,33 @@ Dev Engine::upload(const TensorInfo* t, const std::string& name, int64_t n_in, i
         throw std::runtime_error(t->name + " is " + shape_of(*t) + ", expected [" + std::to_string(n_in) + ", " +
                                  std::to_string(n_out) + "]");
     const size_t bytes = home(*t).payload(*t), count = (size_t) t->elements();
+    if (want == kGuessMat && !fix && n_in % ggml_blck_size(GGML_TYPE_Q4_0) == 0 &&
+        ggml_get_type_traits((ggml_type) t->type)->to_float) {
+        const size_t row = ggml_row_size(GGML_TYPE_Q4_0, n_in), out = row * (size_t) n_out;
+        const Dev d{dense_ ? dense_ + dense_at_ : nullptr, (uint32_t) GGML_TYPE_Q4_0, (int) n_in, (int) n_out};
+        dense_at_ += pad(out) + kTail;
+        if (!dense_) return d;
+        if (dense_at_ > dense_bytes_) throw std::logic_error("the dense arena is too small for " + t->name);
+        // a few thousand rows at a time, to floats and to Q4_0, on threads of their own: the engine's are not
+        // started yet
+        const size_t in_row = bytes / (size_t) n_out, rows = 4096;
+        std::vector<uint8_t> q(out);
+        std::vector<float> f(rows * (size_t) n_in);
+        const ggml_to_float_t to_float = ggml_get_type_traits((ggml_type) t->type)->to_float;
+        const uint8_t* src = (const uint8_t*) home(*t).data(*t);
+        Workers pool(std::max(1u, std::thread::hardware_concurrency() / 2));
+        for (size_t r0 = 0; r0 < (size_t) n_out; r0 += rows) {
+            const size_t m = std::min(rows, (size_t) n_out - r0);
+            pool.run((int) ((m + 255) / 256), [&](int k) {
+                const size_t a = (size_t) k * 256, b = std::min(m, a + 256);
+                to_float(src + (r0 + a) * in_row, f.data() + a * n_in, (int64_t) ((b - a) * n_in));
+                ggml_quantize_chunk(GGML_TYPE_Q4_0, f.data() + a * n_in, q.data() + (r0 + a) * row, 0,
+                                    (int64_t) (b - a), n_in, nullptr);
+            });
+        }
+        ck(cudaMemcpy(d.p, q.data(), out, cudaMemcpyHostToDevice), "weight upload");
+        return d;
+    }
     const bool as_is = !fix && (t->type == kTypeF32 || (want != kF32 && t->type == kTypeBF16) ||
                                 (want == kAnyMat && kernels::native_mmvq_supported((int) t->type)));
     const uint32_t type = as_is ? t->type : want == kF32 ? kTypeF32 : kTypeBF16;

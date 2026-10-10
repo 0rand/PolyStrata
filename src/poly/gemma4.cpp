@@ -155,7 +155,7 @@ void Gemma4::load_drafter() {
     d_pre_ = up("nextn.pre_projection.weight", 2 * n_embd_, d_embd_, kAnyMat);
     d_post_ = up("nextn.post_projection.weight", d_embd_, n_embd_, kAnyMat);
     d_out_norm_ = up("output_norm.weight", d_embd_, 1, kF32);
-    d_table_ = up("token_embd.weight", d_embd_, n_vocab_, kAnyMat);
+    d_table_ = up("token_embd.weight", d_embd_, n_vocab_, kGuessMat);
     d_freq_ = Dev{};
     for (int il = 0; il < (int) guess_.size(); ++il) {
         Guess& G = guess_[(size_t) il];
@@ -454,22 +454,15 @@ void Gemma4::layer_head(Layer& L, int il, int n) {
     dbg("attn", il, cur_, n_embd_);
     axpy(cur_, 1.f, r_, all, true, st_);
 
-    rms_norm(r_, fp(L.ffn_norm), xn_, n_embd_, n, rms_eps_, st_);
-    kernels::native_quantize_q8_1(xn_, xq_, all, 1, st_);
-    lin(B.ffn_gate, xn_, g_, n, xq_);
-    lin(B.ffn_up, xn_, u_, n, xq_);
-    geglu(g_, u_, h_, n * n_ff_, st_);
-    lin(B.ffn_down, h_, cur_, n);
     if (!L.moe) {
-        rms_norm(cur_, fp(B.post_ffn), fo_, n_embd_, n, rms_eps_, st_);
-        dbg("ffn", il, fo_, n_embd_);
-        axpy(fo_, 1.f, r_, all, true, st_);
+        mlp(L, il, n, fo_);
+        rms_norm(fo_, fp(B.post_ffn), cur_, n_embd_, n, rms_eps_, st_);
+        dbg("ffn", il, cur_, n_embd_);
+        axpy(cur_, 1.f, r_, all, true, st_);
         if (B.out_scale != 1.f) axpy(r_, B.out_scale, r_, all, false, st_);
         return;
     }
-    rms_norm(cur_, fp(B.post_mlp), mlp_, n_embd_, n, rms_eps_, st_);
-    dbg("mlp", il, mlp_, n_embd_);
-
+    // the MLP is beside the experts, and goes after the router, while the host routes (moe_shared())
     rms_norm(r_, fp(B.rscale), rin_, n_embd_, n, rms_eps_, st_);
     rms_norm(r_, fp(B.pre_moe), xn_, n_embd_, n, rms_eps_, st_);
     kernels::native_quantize_q8_1(xn_, xq_, all, 1, st_);
@@ -480,9 +473,23 @@ void Gemma4::layer_head(Layer& L, int il, int n) {
 // The router reads the residual, normed and scaled a value at a time (rin_).
 void Gemma4::router_scores(const Layer& L, int n) { lin(L.gate_inp, rin_, rl_, n); }
 
-// No expert is shared: the routed experts' sum starts from nothing.
-void Gemma4::moe_shared(const Layer&, int, int n) {
+// The dense MLP of the layer's normed residual, into `out`.
+void Gemma4::mlp(const Layer& L, int il, int n, float* out) {
+    const Block& B = blocks_[(size_t) il];
+    rms_norm(r_, fp(L.ffn_norm), cur_, n_embd_, n, rms_eps_, st_);
+    lin(B.ffn_gate, cur_, g_, n);
+    lin(B.ffn_up, cur_, u_, n);
+    geglu(g_, u_, h_, n * n_ff_, st_);
+    lin(B.ffn_down, h_, out, n);
+}
+
+// No expert is shared: the routed experts' sum starts from nothing.  The MLP beside them goes here, after the
+// router's copy: the card has it to do while the host routes and computes its experts.
+void Gemma4::moe_shared(const Layer& L, int il, int n) {
     ck(cudaMemsetAsync(fo_, 0, (size_t) n * n_embd_ * sizeof(float), cs(st_)), "experts");
+    mlp(L, il, n, cur_);
+    rms_norm(cur_, fp(blocks_[(size_t) il].post_mlp), mlp_, n_embd_, n, rms_eps_, st_);
+    dbg("mlp", il, mlp_, n_embd_);
 }
 
 // The routed experts' sum is normed, the MLP's output is added, their sum is normed again and goes into the

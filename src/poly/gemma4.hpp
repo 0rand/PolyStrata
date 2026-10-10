@@ -49,6 +49,8 @@ protected:
     int head_key(int il, int n) const override;
 
 private:
+    void mlp(const Layer& L, int il, int n, float* out);
+
     /// A layer's weights beside the ones every architecture has (Layer), and its caches.
     struct Block {
         bool swa = false;   ///< attends a sliding window; its caches are rings

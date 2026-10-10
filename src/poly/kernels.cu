@@ -21,6 +21,9 @@ constexpr int KEY_BLOCK = 16;   // cache rows one block of dsa_keys_kernel copie
 // attn_score_kernel: a block's warps, a row and a group each; the values of a key a thread reads at a step; the
 // queries a key's values are kept for; attn_score_reg_kernel's rows a warp
 constexpr int SCORE_WARPS = 8, SCORE_VALUES = 4, SCORE_QUERIES = 4, SCORE_KEYS = 8;
+// attend_batch(): the bytes of a chunk's results, which every block of rows reads and writes once more: in the
+// card's L2 cache (32 MiB on the 4070 Laptop's AD106) that costs little, from its memory a lot
+constexpr size_t kAttendResults = size_t(8) << 20;
 // attn_value_kernel: a block's value dimensions, a sum's shares, a block's queries
 constexpr int VALUE_DIMS = 32, VALUE_SHARES = 32, VALUE_QUERIES = 8;
 constexpr int KDA_TERMS = 16, KDA_COLUMNS = 16;   // kda_state_kernel: a thread's values, a block's columns
@@ -985,8 +988,10 @@ __global__ void attn_value_kernel(const float* __restrict__ score, const half* _
 
 // attn_value_kernel with the weights as attn_softmax_kernel leaves them with `wt`: a row's queries side by side,
 // so a warp reads a row's weights in two loads that every lane makes alike, where the other passes them from lane
-// to lane, and so waited on the passing (Nsight Compute).  The products go in the rows' order: the sums are the
-// other kernel's to the bit.
+// to lane, and so waited on the passing (Nsight Compute).  A block has TILES of the blocks of VALUE_QUERIES
+// queries, which read the cache's values once between them.  The products go in the rows' order: the sums are
+// the other kernel's to the bit.
+template <int TILES>
 __global__ void __launch_bounds__(VALUE_DIMS * VALUE_SHARES)
 attn_value_t_kernel(const float* __restrict__ wt, const half* __restrict__ vcache, float* __restrict__ out, int n_keys,
                     int dim, int n_head, int kv_heads, long long pos, int first, int tokens, int window, int ring,
@@ -994,8 +999,8 @@ attn_value_t_kernel(const float* __restrict__ wt, const half* __restrict__ vcach
     static_assert(VALUE_DIMS == WARP && VALUE_QUERIES == 8, "a warp is a share, and a row's weights are two float4");
     __shared__ float share[VALUE_QUERIES][VALUE_SHARES][VALUE_DIMS];
     const int per = n_head / kv_heads, dims = (dim + VALUE_DIMS - 1) / VALUE_DIMS;
-    const int g = blockIdx.x / dims, q0 = blockIdx.y * VALUE_QUERIES;
-    const int live = min(VALUE_QUERIES, tokens * per - q0);   // the block's queries
+    const int blocks = (tokens * per + VALUE_QUERIES - 1) / VALUE_QUERIES;   // the group's blocks of queries
+    const int g = blockIdx.x / dims, b0 = blockIdx.y * TILES;
     const int lane = threadIdx.x % VALUE_DIMS, s = threadIdx.x / VALUE_DIMS;
     const int d = (blockIdx.x % dims) * VALUE_DIMS + lane;
     const long long p = (at ? *at : pos) + first;
@@ -1003,38 +1008,52 @@ attn_value_t_kernel(const float* __restrict__ wt, const half* __restrict__ vcach
     const int span = attn_span(p, tokens, window, last, &lo);
     const size_t width = size_t(kv_heads) * dim;
     const half* v = vcache + size_t(g) * dim + min(d, dim - 1);   // a lane past the last value reads one all the same
-    const float* w = wt + (size_t(g) * gridDim.y + blockIdx.y) * n_keys * VALUE_QUERIES;
-    float acc[VALUE_QUERIES];
+    const float* w[TILES];   // a tile past the group's last reads the block's first again, for nothing
 #pragma unroll
-    for (int i = 0; i < VALUE_QUERIES; ++i) acc[i] = 0.0f;
+    for (int t = 0; t < TILES; ++t)
+        w[t] = wt + (size_t(g) * blocks + (b0 + t < blocks ? b0 + t : b0)) * n_keys * VALUE_QUERIES;
+    float acc[TILES][VALUE_QUERIES];
+#pragma unroll
+    for (int t = 0; t < TILES; ++t)
+#pragma unroll
+        for (int i = 0; i < VALUE_QUERIES; ++i) acc[t][i] = 0.0f;
     long long row = ring > 0 ? (lo + s) % ring : lo + s;
     for (int j = s; j < span; j += VALUE_SHARES) {
         const float x = __half2float(v[size_t(row) * width]);
-        const float4 a = *reinterpret_cast<const float4*>(w + size_t(j) * VALUE_QUERIES);
-        const float4 b = *reinterpret_cast<const float4*>(w + size_t(j) * VALUE_QUERIES + 4);
-        acc[0] += a.x * x;
-        acc[1] += a.y * x;
-        acc[2] += a.z * x;
-        acc[3] += a.w * x;
-        acc[4] += b.x * x;
-        acc[5] += b.y * x;
-        acc[6] += b.z * x;
-        acc[7] += b.w * x;
+#pragma unroll
+        for (int t = 0; t < TILES; ++t) {
+            const float4 a = *reinterpret_cast<const float4*>(w[t] + size_t(j) * VALUE_QUERIES);
+            const float4 b = *reinterpret_cast<const float4*>(w[t] + size_t(j) * VALUE_QUERIES + 4);
+            acc[t][0] += a.x * x;
+            acc[t][1] += a.y * x;
+            acc[t][2] += a.z * x;
+            acc[t][3] += a.w * x;
+            acc[t][4] += b.x * x;
+            acc[t][5] += b.y * x;
+            acc[t][6] += b.z * x;
+            acc[t][7] += b.w * x;
+        }
         row += VALUE_SHARES;
         if (ring > 0 && row >= ring) row -= ring;
     }
-    for (int i = 0; i < live; ++i) {
-        long long own;   // the first row of the query's token: the thread's rows are this share of the token's
-        attn_rows(p + (q0 + i) / per, window, last, &own);
-        share[i][(s + VALUE_SHARES - int((own - lo) % VALUE_SHARES)) % VALUE_SHARES][lane] = acc[i];
-    }
-    __syncthreads();
-    if (s != 0 || d >= dim) return;
-    for (int i = 0; i < live; ++i) {
-        float sum = share[i][0][lane];
-        for (int k = 1; k < VALUE_SHARES; ++k) sum += share[i][k][lane];
-        const int query = q0 + i;
-        out[((size_t(first) + query / per) * n_head + g * per + query % per) * dim + d] = sum;
+#pragma unroll
+    for (int t = 0; t < TILES; ++t) {
+        const int q0 = (b0 + t) * VALUE_QUERIES, live = min(VALUE_QUERIES, tokens * per - q0);
+        if (live <= 0) break;
+        if (t > 0) __syncthreads();   // the tile before has its sums out of share
+        for (int i = 0; i < live; ++i) {
+            long long own;   // the first row of the query's token: the thread's rows are this share of the token's
+            attn_rows(p + (q0 + i) / per, window, last, &own);
+            share[i][(s + VALUE_SHARES - int((own - lo) % VALUE_SHARES)) % VALUE_SHARES][lane] = acc[t][i];
+        }
+        __syncthreads();
+        if (s == 0 && d < dim)
+            for (int i = 0; i < live; ++i) {
+                float sum = share[i][0][lane];
+                for (int k = 1; k < VALUE_SHARES; ++k) sum += share[i][k][lane];
+                const int query = q0 + i;
+                out[((size_t(first) + query / per) * n_head + g * per + query % per) * dim + d] = sum;
+            }
     }
 }
 
@@ -1585,12 +1604,20 @@ void attend(const float* q, const uint16_t* kcache, const uint16_t* vcache, int6
                         ? score + size_t(c) * n_head * keys : nullptr;
         attn_softmax_kernel<<<dim3(n_head, c), 256, 0, cs(stream)>>>(score, keys, (long long) pos, first, c, window,
                                                                     last, at, wt, per);
-        if (wt)
-            attn_value_t_kernel<<<dim3(kv_heads * grid(dim, VALUE_DIMS), blocks), VALUE_DIMS * VALUE_SHARES, 0,
-                                  cs(stream)>>>(wt, (const half*) vcache, out, keys, dim, n_head, kv_heads,
-                                                (long long) pos, first, c, window, ring, last, at);
+        // Two blocks of queries a launch block read the values half as often, where the launch still has
+        // blocks for most of the card's 36 multiprocessors: for Qwen3.6's two tokens they are half as many and
+        // slower, for three or four tokens and for Gemma 4's full layers faster.
+        const int dims = grid(dim, VALUE_DIMS);
+        if (wt && blocks > 1 && kv_heads * dims * grid(blocks, 2) >= 32)
+            attn_value_t_kernel<2><<<dim3(kv_heads * dims, grid(blocks, 2)), VALUE_DIMS * VALUE_SHARES,
+                                     0, cs(stream)>>>(wt, (const half*) vcache, out, keys, dim, n_head, kv_heads,
+                                                      (long long) pos, first, c, window, ring, last, at);
+        else if (wt)
+            attn_value_t_kernel<1><<<dim3(kv_heads * dims, blocks), VALUE_DIMS * VALUE_SHARES, 0, cs(stream)>>>(
+                wt, (const half*) vcache, out, keys, dim, n_head, kv_heads, (long long) pos, first, c, window, ring,
+                last, at);
         else
-            attn_value_kernel<<<dim3(kv_heads * grid(dim, VALUE_DIMS), blocks), VALUE_DIMS * VALUE_SHARES, 0,
+            attn_value_kernel<<<dim3(kv_heads * dims, blocks), VALUE_DIMS * VALUE_SHARES, 0,
                                 cs(stream)>>>(score, (const half*) vcache, out, keys, dim, n_head, kv_heads,
                                               (long long) pos, first, c, window, ring, last, at);
     }
@@ -1609,8 +1636,10 @@ void attend_batch(void* blas, const float* q, const uint16_t* kcache, const uint
     const size_t cells = score_floats / 3 * 2;
     half* weight = (half*) (score + cells);
     for (int first = 0, c = 0; first < rows; first += c) {
-        // every token left, unless a grid's 65535 rows or the scratch for one row's scores is less
-        c = (int) std::min({size_t(rows - first), size_t(65535 / n_head), cells / n_head});
+        // every token left, unless a grid's 65535 rows or the scratch for one row's scores is less, or the results
+        // would outgrow kAttendResults: every block of rows reads and writes them all again (og)
+        c = (int) std::min({size_t(rows - first), size_t(65535 / n_head), cells / n_head,
+                            std::max<size_t>(16, kAttendResults / (size_t(n_head) * dim * sizeof(float)))});
         const long long p0 = pos + first;   // the chunk's first position, and the first row its tokens read
         const long long lo0 = window > 0 && p0 >= window ? p0 - window + 1 : 0;
         const int n_keys = int((whole ? last : p0 + c - 1) - lo0) + 1;

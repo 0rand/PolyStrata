@@ -320,7 +320,9 @@ protected:
     virtual const Names* meta_alias(const char* key) const { (void) key; return nullptr; }
 
     // ---- what it builds on ----
-    enum Want { kF32, kFloatMat, kAnyMat };
+    /// kGuessMat: quantized again to Q4_0, for a matrix only guesses are made with: a guess is checked, so a less
+    /// exact one costs a wrong guess now and then and no token.
+    enum Want { kF32, kFloatMat, kAnyMat, kGuessMat };
     Dev upload(const TensorInfo* t, const std::string& name, int64_t n_in, int64_t n_out, Want want,
                float (*fix)(float) = nullptr);
     const TensorInfo* tensor(int il, const char* name) const;
