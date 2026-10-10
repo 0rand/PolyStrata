@@ -651,6 +651,33 @@ tokens/s here and after the long prompt at 21 to 32, and read it at 870 to 1,610
 
 Not run on this laptop: GLM 5.3 Flash, for which it has not the RAM.
 
+#### Longer contexts on the laptop
+
+Setup asks for the context. The engine keeps the keys and values of the context in fp16 on the card, about 20 KB a
+token for each of the three models (ten layers of full attention with two key and value heads of 256 in Qwen3.6
+and Ornith; Gemma 4's five global layers, plus about 0.2 GB for its sliding layers of 1,024 tokens). So every 32K
+of context takes about 0.7 GB from the cache of experts on an 8 GB card.
+
+Measured on the laptop on 2026-10-10 with the build of main: `polystrata.py benchmark --prompt-tokens N` with
+`--max-context` set in the model's config, one run each, with a prompt of about nine tenths of the context.
+
+| Model | Context | Experts in VRAM at the start | Prompt, tokens | Reads, tokens/s | Writes after the prompt |
+| --- | --- | --- | ---: | ---: | ---: |
+| Qwen3.6-35B-A3B UD-Q3_K_M | 32K | 2.5 GiB | 31,366 | 1,345 | 58.5 |
+| | 64K | 1.9 GiB | 58,889 | 1,089 | 42.3 |
+| | 128K | 0.4 GiB | 117,273 | 731 | 29.5 |
+| Gemma 4 26B-A4B UD-Q3_K_M | 32K | 1.6 GiB | 31,223 | 1,908 | 52.0 |
+| | 64K | 0.9 GiB | 61,289 | 1,490 | 44.1 |
+| | 128K | none | 122,099 | 995 | 29.2 |
+| Ornith 1.5 APEX-I-Compact | 32K | 3.2 GiB | 31,366 | 1,341 | 58.3 |
+| | 64K | 2.5 GiB | 58,889 | 1,079 | 46.3 |
+| | 128K | 1.2 GiB | 117,273 | 750 | 28.2 |
+
+A short chat is written at about the same speed with every context, 60 to 66 tokens/s. Qwen3.6 with a context of
+256K does not work on an 8 GB card: no expert is left in VRAM, 3.6 GB more goes to the shared memory the driver
+lends from the RAM, and a prompt of 236K tokens had not been read after 20 minutes. Only this 8 GB card was
+measured; a larger card keeps more experts at every context.
+
 ## How each backend was checked
 
 Against llama.cpp on the same file: greedy, 64 tokens after five chat prompts of about 25 to 8000 tokens, the
