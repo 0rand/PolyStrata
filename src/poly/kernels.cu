@@ -27,6 +27,8 @@ constexpr size_t kAttendResults = size_t(8) << 20;
 // attn_value_kernel: a block's value dimensions, a sum's shares, a block's queries
 constexpr int VALUE_DIMS = 32, VALUE_SHARES = 32, VALUE_QUERIES = 8;
 constexpr int KDA_TERMS = 16, KDA_COLUMNS = 16;   // kda_state_kernel: a thread's values, a block's columns
+// the indexer: a key's values; idx_score_kernel's keys a tile and tokens a block; idx_select_kernel's threads
+constexpr int IDX_DIM = 128, IDX_TILE = 32, IDX_WARPS = 8, IDX_SELECT = 1024;
 
 __device__ __forceinline__ float warp_sum(float x) {
 #pragma unroll
@@ -494,24 +496,77 @@ __global__ void idx_pool_kernel(const float* __restrict__ ring, int ring_rows, f
     pool[size_t(last / kpool) * dim + d] = acc / sum;
 }
 
-// One block per pool and token, 32 threads over the indexer heads.
-__global__ void idx_score_kernel(const float* __restrict__ q, const float* __restrict__ w,
-                                 const float* __restrict__ pool, float* __restrict__ score, int score_stride,
-                                 int dim, int n_head, int kpool, long long pos, float wscale) {
-    const size_t tok = blockIdx.y;
-    if (blockIdx.x >= (pos + tok + 1) / kpool) return;   // not a whole pool at this token yet
-    const float* key = pool + size_t(blockIdx.x) * dim;
-    q += tok * n_head * dim;
-    w += tok * n_head;
-    float acc = 0.0f;
-    for (int h = threadIdx.x; h < n_head; h += WARP) {
-        const float* qh = q + size_t(h) * dim;
-        float dot = 0.0f;
-        for (int d = 0; d < dim; ++d) dot += qh[d] * key[d];
-        acc += fmaxf(dot, 0.0f) * (w[h] * wscale);
+// A block's warps are tokens, one each, that score a run of pools together, IDX_TILE keys at a time through shared
+// memory; lane h holds head h's query.  A score is summed in one order in any company: a head's product along the
+// key, then the heads by warp_sum().
+template <int DIM>
+__global__ void __launch_bounds__(IDX_WARPS * WARP)
+    idx_score_kernel(const float* __restrict__ q, const float* __restrict__ w, const float* __restrict__ pool,
+                     float* __restrict__ score, int score_stride, int n_head, int kpool, long long pos, float wscale,
+                     int run, int rows) {
+    __shared__ float4 tile[IDX_TILE * DIM / 4];
+    const int warps = blockDim.x / WARP, h = threadIdx.x % WARP;
+    const int tok = blockIdx.y * warps + threadIdx.x / WARP;
+    const int first = blockIdx.x * run;
+    const int last = min(first + run, int((pos + min(rows, int(blockIdx.y + 1) * warps)) / kpool));
+    if (first >= last) return;   // not a whole pool at the block's last token yet
+    const bool live = tok < rows;
+    const int n_pool = live ? int((pos + tok + 1) / kpool) : 0;
+    float qh[DIM];
+    float wh = 0.0f;
+    if (live && h < n_head) {
+        const float4* src = reinterpret_cast<const float4*>(q + (size_t(tok) * n_head + h) * DIM);
+#pragma unroll
+        for (int d = 0; d < DIM / 4; ++d) {
+            const float4 v = src[d];
+            qh[4 * d] = v.x;
+            qh[4 * d + 1] = v.y;
+            qh[4 * d + 2] = v.z;
+            qh[4 * d + 3] = v.w;
+        }
+        wh = w[size_t(tok) * n_head + h] * wscale;
+    } else {
+#pragma unroll
+        for (int d = 0; d < DIM; ++d) qh[d] = 0.0f;
     }
-    acc = warp_sum(acc);
-    if (threadIdx.x == 0) score[tok * score_stride + blockIdx.x] = acc;
+    float* out = score + size_t(tok) * score_stride;
+    const float4* keys = reinterpret_cast<const float4*>(pool);
+    for (int p0 = first; p0 < last; p0 += IDX_TILE) {
+        const int n = min(IDX_TILE, last - p0);
+#pragma unroll 4
+        for (int i = threadIdx.x; i < n * DIM / 4; i += blockDim.x) tile[i] = keys[size_t(p0) * (DIM / 4) + i];
+        __syncthreads();
+        const int m = min(n, n_pool - p0);   // the token's own pools in the tile
+        for (int j = 0; j < m; j += 2) {   // two at a time
+            const int j1 = min(j + 1, m - 1);
+            const float4 *k0 = tile + j * (DIM / 4), *k1 = tile + j1 * (DIM / 4);
+            float d0 = 0.0f, d1 = 0.0f;
+#pragma unroll
+            for (int d = 0; d < DIM / 4; ++d) {
+                const float4 a = k0[d], b = k1[d];
+                d0 += qh[4 * d] * a.x;
+                d1 += qh[4 * d] * b.x;
+                d0 += qh[4 * d + 1] * a.y;
+                d1 += qh[4 * d + 1] * b.y;
+                d0 += qh[4 * d + 2] * a.z;
+                d1 += qh[4 * d + 2] * b.z;
+                d0 += qh[4 * d + 3] * a.w;
+                d1 += qh[4 * d + 3] * b.w;
+            }
+            float s0 = 0.0f, s1 = 0.0f;
+            if (h < n_head) {
+                s0 += fmaxf(d0, 0.0f) * wh;
+                s1 += fmaxf(d1, 0.0f) * wh;
+            }
+            s0 = warp_sum(s0);
+            s1 = warp_sum(s1);
+            if (h == 0) {
+                out[p0 + j] = s0;
+                if (j1 > j) out[p0 + j1] = s1;
+            }
+        }
+        __syncthreads();
+    }
 }
 
 // idx_score_kernel's sum over the heads for a prompt batch, whose products cuBLAS made: dot holds q[h] . pooled(p)
@@ -535,53 +590,86 @@ __device__ __forceinline__ uint32_t idx_key(float s) {
     return b & 0x80000000u ? ~b : b | 0x80000000u;
 }
 
-// One value per thread summed over the block, as block_sum for counts.
-__device__ __forceinline__ int block_count(int x, int* part) {
+// x summed over the threads before this one, and over all of them in *all.  part has a slot a warp.
+__device__ __forceinline__ int block_before(int x, int* part, int* all) {
+    const int lane = threadIdx.x % WARP, wid = threadIdx.x / WARP, warps = blockDim.x / WARP;
+    int in = x;
 #pragma unroll
-    for (int o = WARP / 2; o > 0; o >>= 1) x += __shfl_xor_sync(0xffffffff, x, o, WARP);
-    if ((threadIdx.x & 31) == 0) part[threadIdx.x >> 5] = x;
+    for (int o = 1; o < WARP; o <<= 1) {
+        const int y = __shfl_up_sync(0xffffffff, in, o, WARP);
+        if (lane >= o) in += y;
+    }
+    if (lane == WARP - 1) part[wid] = in;
     __syncthreads();
-    int s = 0;
-    for (int k = 0; k < int(blockDim.x) / WARP; ++k) s += part[k];
+    if (wid == 0) {
+        int v = lane < warps ? part[lane] : 0;
+#pragma unroll
+        for (int o = 1; o < WARP; o <<= 1) {
+            const int y = __shfl_up_sync(0xffffffff, v, o, WARP);
+            if (lane >= o) v += y;
+        }
+        if (lane < warps) part[lane] = v;
+    }
     __syncthreads();
-    return s;
+    const int before = (wid ? part[wid - 1] : 0) + in - x;
+    *all = part[warps - 1];
+    __syncthreads();   // part is free again
+    return before;
 }
 
 // A token's n_top pools with the highest scores, the lower pool first among equals, as rows of its list in that
-// order, then the rows no pool has yet.  One block of 256 a token; a thread has a run of the token's pools.  The
-// block's shared memory holds the chosen pools and then their keys, n_top each.
-__global__ void idx_select_kernel(const float* __restrict__ score, int score_stride, int32_t* __restrict__ sel,
-                                  int sel_stride, int n_top, int kpool, long long pos) {
+// order, then the rows no pool has yet.  One block of IDX_SELECT a token.  The cut, the n_top-th highest key, comes
+// a byte at a time: each warp counts the next byte of the keys that agree with it so far.  Then a thread has a run
+// of the token's pools.  The block's shared memory holds the chosen pools and then their keys, n_top each.
+__global__ void __launch_bounds__(IDX_SELECT)
+    idx_select_kernel(const float* __restrict__ score, int score_stride, int32_t* __restrict__ sel, int sel_stride,
+                      int n_top, int kpool, long long pos) {
     extern __shared__ uint32_t chosen[];
-    __shared__ int part[8], above[256], level[256];
+    __shared__ int hist[IDX_SELECT / WARP][256], part[IDX_SELECT / WARP], pick[2];
     const long long at = pos + blockIdx.x;
     const int n_pool = int((at + 1) / kpool);
     const float* s = score + size_t(blockIdx.x) * score_stride;
-    const int per = (n_pool + int(blockDim.x) - 1) / int(blockDim.x);
-    const int lo = threadIdx.x * per, hi = min(lo + per, n_pool);
-    // the cut: the largest key that n_top pools reach, a bit at a time
-    uint32_t cut = 0;
-    for (int b = 31; b >= 0; --b) {
-        const uint32_t c = cut | (1u << b);
-        int n = 0;
-        for (int i = lo; i < hi; ++i) n += idx_key(s[i]) >= c;
-        if (block_count(n, part) >= n_top) cut = c;
+    const int lane = threadIdx.x % WARP, wid = threadIdx.x / WARP;
+    uint32_t cut = 0, mask = 0;
+    int want = n_top;   // the cut's place among the keys that agree with it on mask
+    for (int shift = 24; shift >= 0; shift -= 8) {
+        for (int d = lane; d < 256; d += WARP) hist[wid][d] = 0;
+        __syncwarp();
+        for (int i = threadIdx.x; i < n_pool; i += blockDim.x) {
+            const uint32_t k = idx_key(s[i]);
+            if ((k & mask) == cut) atomicAdd(&hist[wid][(k >> shift) & 255], 1);
+        }
+        __syncthreads();
+        if (threadIdx.x < 256) {
+            int t = 0;
+            for (int k = 0; k < IDX_SELECT / WARP; ++k) t += hist[k][threadIdx.x];
+            hist[0][threadIdx.x] = t;   // a thread reads and writes its own column only
+        }
+        __syncthreads();
+        if (threadIdx.x == 0) {
+            int d = 255, above = 0;
+            for (; d > 0 && above + hist[0][d] < want; --d) above += hist[0][d];
+            pick[0] = d;
+            pick[1] = above;
+        }
+        __syncthreads();
+        cut |= uint32_t(pick[0]) << shift;
+        mask |= 255u << shift;
+        want -= pick[1];
+        __syncthreads();
     }
     // the pools above the cut, and of those on it the lowest, in the order of the pools
+    const int per = (n_pool + int(blockDim.x) - 1) / int(blockDim.x);
+    const int lo = threadIdx.x * per, hi = min(lo + per, n_pool);
     int g = 0, e = 0;
     for (int i = lo; i < hi; ++i) {
         const uint32_t k = idx_key(s[i]);
         g += k > cut;
         e += k == cut;
     }
-    above[threadIdx.x] = g;
-    level[threadIdx.x] = e;
-    __syncthreads();
-    int g0 = 0, e0 = 0, g_all = 0;   // in the threads before this one, and above the cut in all
-    for (int k = 0; k < int(blockDim.x); ++k) {
-        if (k < int(threadIdx.x)) g0 += above[k], e0 += level[k];
-        g_all += above[k];
-    }
+    int g_all, e_all;   // above and on the cut in all the threads
+    const int g0 = block_before(g, part, &g_all);   // in the threads before this one
+    int e0 = block_before(e, part, &e_all);
     const int need = n_top - g_all;
     int out = g0 + min(e0, need);
     for (int i = lo; i < hi; ++i) {
@@ -1491,15 +1579,20 @@ void idx_pool(const float* ring, int ring_rows, float* pool, const float* ape, i
 
 void idx_score(const float* q, const float* w, const float* pool, float* score, int score_stride, int dim,
                int n_head, int kpool, int64_t pos, int rows, void* stream) {
+    if (dim != IDX_DIM || n_head > WARP) throw std::invalid_argument("idx_score: 128 values a key, 32 heads at most");
     const int n_pool = int((pos + rows) / kpool);   // the last token sees the most
-    idx_score_kernel<<<dim3(n_pool, rows), WARP, 0, cs(stream)>>>(q, w, pool, score, score_stride, dim, n_head,
-                                                                 kpool, (long long) pos,
-                                                                 1.0f / std::sqrt(float(dim) * float(n_head)));
+    if (n_pool == 0) return;
+    // whole tiles, and some 500 blocks at a long context
+    const int run = std::max(IDX_TILE, std::min(1024, n_pool / 512 / IDX_TILE * IDX_TILE));
+    const int warps = std::min(rows, IDX_WARPS);
+    idx_score_kernel<IDX_DIM><<<dim3((n_pool + run - 1) / run, (rows + warps - 1) / warps), warps * WARP, 0,
+                                cs(stream)>>>(q, w, pool, score, score_stride, n_head, kpool, (long long) pos,
+                                              1.0f / std::sqrt(float(dim) * float(n_head)), run, rows);
 }
 
 void idx_select(const float* score, int score_stride, int32_t* sel, int sel_stride, int n_top, int kpool,
                 int64_t pos, int rows, void* stream) {
-    idx_select_kernel<<<rows, 256, 2 * size_t(n_top) * sizeof(uint32_t), cs(stream)>>>(
+    idx_select_kernel<<<rows, IDX_SELECT, 2 * size_t(n_top) * sizeof(uint32_t), cs(stream)>>>(
         score, score_stride, sel, sel_stride, n_top, kpool, (long long) pos);
 }
 

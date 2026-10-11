@@ -87,7 +87,8 @@ void idx_pool(const float* ring, int ring_rows, float* pool, const float* ape, i
               int rows, void* stream);
 /// For the tokens from position `pos`: score[p] = sum_h relu(q[h] . pool[p]) * w[h] for the pools p that are
 /// complete at the token's position.  A token's scores start score_stride apart.  w is the raw indexer_proj
-/// output; the 1/sqrt(dim * n_head) factor is applied here.
+/// output; the 1/sqrt(dim * n_head) factor is applied here.  Throws std::invalid_argument unless dim is 128 and
+/// n_head 32 or less.
 void idx_score(const float* q, const float* w, const float* pool, float* score, int score_stride, int dim,
                int n_head, int kpool, int64_t pos, int rows, void* stream);
 /// idx_score() for a prompt batch: the products of the queries and the pools' keys through cuBLAS, as many tokens
