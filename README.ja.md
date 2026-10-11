@@ -123,6 +123,8 @@ PolyStrata が 2 台の PC で、短いチャットと 3 万〜3.2 万トーク�
 ワークステーションで毎秒 6,100 トークンで読みます。
 ワークステーションのカードを 8 GB に制限した数字は、ノート PC を測る前の代わりの値で、
 [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram)（英語）にあります。
+ノート PC の数字は `--tail-skip` をオフにして測ったもので、いまはインストーラーが Qwen3.6 でオンにします
+（[docs/BACKENDS.md](docs/BACKENDS.md#what-was-tuned)、英語）。
 
 ### Ornith 1.5
 

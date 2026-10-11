@@ -128,6 +128,8 @@ Ein Prompt von 10,000 Tokens wird auf dem Laptop mit 1,620 Tokens/s gelesen und 
 Die Zahlen der auf 8 GB begrenzten
 Workstation-Karte, ein Ersatz aus der Zeit vor der Messung auf dem Laptop, stehen in
 [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram) (englisch).
+Der Laptop wurde mit ausgeschaltetem `--tail-skip` gemessen, das der Installer jetzt für Qwen3.6 einschaltet
+([docs/BACKENDS.md](docs/BACKENDS.md#what-was-tuned), englisch).
 
 ### Ornith 1.5
 

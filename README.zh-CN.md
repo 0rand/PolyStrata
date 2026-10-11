@@ -118,6 +118,7 @@ GLM 5.3 Flash 比其他几个模型大得多，这张卡的 32 GB 显存只放�
 
 10,000 个 token 的提示，笔记本每秒读 1,620 个，工作站每秒读 6,100 个。
 把工作站的显卡限制到 8 GB 的那组数字是笔记本测出来之前的替身，现在放在 [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram)（英文）里。
+笔记本的数字是关着 `--tail-skip` 测的，现在安装程序会给 Qwen3.6 打开它（见 [docs/BACKENDS.md](docs/BACKENDS.md#what-was-tuned)，英文）。
 
 ### Ornith 1.5
 

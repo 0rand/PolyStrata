@@ -126,6 +126,8 @@ Un prompt de 10,000 tokens est lu à 1,620 tokens/s sur le portable et à 6,100 
 Les chiffres de la carte de la
 station limitée à 8 Go, un substitut d'avant la mesure sur le portable, sont dans
 [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram) (en anglais).
+Le portable a été mesuré avec `--tail-skip` désactivé, que l'installeur active maintenant pour Qwen3.6
+([docs/BACKENDS.md](docs/BACKENDS.md#what-was-tuned), en anglais).
 
 ### Ornith 1.5
 

@@ -126,6 +126,8 @@ Um prompt de 10,000 tokens é lido a 1,620 tokens/s no notebook e a 6,100 na est
 Os números da placa da estação limitada a 8
 GB, um substituto de antes da medição no notebook, estão em [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram) (em
 inglês).
+O notebook foi medido com `--tail-skip` desligado, que o instalador agora liga para o Qwen3.6
+([docs/BACKENDS.md](docs/BACKENDS.md#what-was-tuned), em inglês).
 
 ### Ornith 1.5
 

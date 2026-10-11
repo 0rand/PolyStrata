@@ -123,6 +123,8 @@ whose card holds the whole model.
 A prompt of 10,000 tokens is read at 1,620 tokens/s on the laptop and at 6,100 on the workstation.
 The workstation's card held to 8 GB, a stand-in from before the laptop was measured,
 is in [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram).
+The laptop was measured with `--tail-skip` off, which the installer now turns on for Qwen3.6
+([docs/BACKENDS.md](docs/BACKENDS.md#what-was-tuned)).
 
 ### Ornith 1.5
 

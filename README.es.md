@@ -126,6 +126,8 @@ Un prompt de 10,000 tokens se lee a 1,620 tokens/s en el portátil y a 6,100 en 
 Las cifras de la tarjeta de la
 estación limitada a 8 GB, un sustituto de antes de medir en el portátil, están en
 [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram) (en inglés).
+El portátil se midió con `--tail-skip` apagado, que el instalador ahora activa para Qwen3.6
+([docs/BACKENDS.md](docs/BACKENDS.md#what-was-tuned), en inglés).
 
 ### Ornith 1.5
 
