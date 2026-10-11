@@ -94,8 +94,7 @@ Gemessen für PolyStrata auf einer Workstation, mit einem kurzen Chat und einem 
 </td></tr>
 </table>
 
-llama.cpp schrieb mit der 3.0BIT-Datei auf demselben PC 26 Tokens/s und las etwa 265. GLM 5.3 Flash ist ein viel größeres
-Modell als die anderen, und nur etwa ein Fünftel seiner Experten passt in die 32 GB dieser Karte, deshalb
+GLM 5.3 Flash ist ein viel größeres Modell als die anderen, und nur etwa ein Fünftel seiner Experten passt in die 32 GB dieser Karte, deshalb
 schreibt es langsamer. Was gemessen wurde und wie: [docs/GLM.md](docs/GLM.md#what-it-was-measured-on) (englisch).
 
 ### Qwen3.6-35B-A3B
@@ -126,8 +125,7 @@ eine Workstation, deren Karte das ganze Modell hält.
 </table>
 
 Ein Prompt von 10,000 Tokens wird auf dem Laptop mit 1,620 Tokens/s gelesen und auf der Workstation mit 6,100.
-llama.cpp mit dem ganzen Modell auf der Karte der Workstation schrieb etwa 180 Tokens/s und las
-Prompts mit 6,000 bis 9,000. Es braucht eine Karte, auf die das Modell passt. Die Zahlen der auf 8 GB begrenzten
+Die Zahlen der auf 8 GB begrenzten
 Workstation-Karte, ein Ersatz aus der Zeit vor der Messung auf dem Laptop, stehen in
 [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram) (englisch).
 
@@ -157,8 +155,6 @@ Genauso gemessen, auf denselben zwei PCs.
 </table>
 
 Ein Prompt von 10,000 Tokens wird auf dem Laptop mit 1,530 Tokens/s gelesen und auf der Workstation mit 5,600.
-llama.cpp mit dem ganzen Modell auf der Karte der Workstation schrieb etwa 180 Tokens/s und las Prompts mit 6,000 bis
-9,000.
 
 ### Gemma 4 26B-A4B
 
@@ -186,8 +182,6 @@ Genauso gemessen, auf denselben zwei PCs.
 </table>
 
 Ein Prompt von 10,000 Tokens wird auf dem Laptop mit 2,080 Tokens/s gelesen und auf der Workstation mit 6,800.
-llama.cpp mit dem ganzen Modell auf der Karte der Workstation schrieb etwa 165 Tokens/s und las Prompts mit 6,000 bis
-9,000.
 
 Die vier Modelle der eigenen Engine von PolyStrata wurden mit ihrem Benchmark gemessen, den du auch auf deinem PC
 laufen lassen kannst: `python polystrata.py benchmark --model <name> --prompt-tokens 24000`

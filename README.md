@@ -90,8 +90,7 @@ Measured for PolyStrata on one workstation, with a short chat and a 29K-token pr
 </td></tr>
 </table>
 
-llama.cpp with the 3.0BIT file on the same PC wrote 26 tokens/s and read about 265. GLM 5.3 Flash is a much larger
-model than the others, and about a fifth of its experts fit in this card's 32 GB, so it writes more slowly.
+GLM 5.3 Flash is a much larger model than the others, and about a fifth of its experts fit in this card's 32 GB, so it writes more slowly.
 What was measured and how: [docs/GLM.md](docs/GLM.md#what-it-was-measured-on).
 
 ### Qwen3.6-35B-A3B
@@ -122,8 +121,7 @@ whose card holds the whole model.
 </table>
 
 A prompt of 10,000 tokens is read at 1,620 tokens/s on the laptop and at 6,100 on the workstation.
-llama.cpp with the whole model on the workstation's card wrote about 180 tokens/s and read prompts at 6,000 to 9,000.
-It needs a card the model fits. The workstation's card held to 8 GB, a stand-in from before the laptop was measured,
+The workstation's card held to 8 GB, a stand-in from before the laptop was measured,
 is in [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram).
 
 ### Ornith 1.5
@@ -151,8 +149,7 @@ Measured the same way, on the same two PCs.
 </td></tr>
 </table>
 
-A prompt of 10,000 tokens is read at 1,530 tokens/s on the laptop and at 5,600 on the workstation. llama.cpp with the
-whole model on the workstation's card wrote about 180 tokens/s and read prompts at 6,000 to 9,000.
+A prompt of 10,000 tokens is read at 1,530 tokens/s on the laptop and at 5,600 on the workstation.
 
 ### Gemma 4 26B-A4B
 
@@ -179,8 +176,7 @@ Measured the same way, on the same two PCs.
 </td></tr>
 </table>
 
-A prompt of 10,000 tokens is read at 2,080 tokens/s on the laptop and at 6,800 on the workstation. llama.cpp with the
-whole model on the workstation's card wrote about 165 tokens/s and read prompts at 6,000 to 9,000.
+A prompt of 10,000 tokens is read at 2,080 tokens/s on the laptop and at 6,800 on the workstation.
 
 The four models of PolyStrata's own engine were measured with its benchmark, which you can run on your PC:
 `python polystrata.py benchmark --model <name> --prompt-tokens 24000`

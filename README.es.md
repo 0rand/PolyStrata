@@ -92,8 +92,7 @@ Medido para PolyStrata en una estación de trabajo, con un chat corto y un promp
 </td></tr>
 </table>
 
-En el mismo PC, llama.cpp escribió 26 tokens/s con el archivo 3.0BIT y leyó unos 265. GLM 5.3 Flash es un modelo mucho
-más grande que los demás, y solo una quinta parte de sus expertos cabe en los 32 GB de esta tarjeta, por eso
+GLM 5.3 Flash es un modelo mucho más grande que los demás, y solo una quinta parte de sus expertos cabe en los 32 GB de esta tarjeta, por eso
 escribe más despacio. Qué se midió y cómo: [docs/GLM.md](docs/GLM.md#what-it-was-measured-on) (en inglés).
 
 ### Qwen3.6-35B-A3B
@@ -124,8 +123,7 @@ estación de trabajo cuya tarjeta tiene el modelo entero.
 </table>
 
 Un prompt de 10,000 tokens se lee a 1,620 tokens/s en el portátil y a 6,100 en la estación de trabajo.
-llama.cpp con el modelo entero en la tarjeta de la estación de trabajo escribió unos 180 tokens/s y leyó
-los prompts a entre 6,000 y 9,000. Necesita una tarjeta en la que quepa el modelo. Las cifras de la tarjeta de la
+Las cifras de la tarjeta de la
 estación limitada a 8 GB, un sustituto de antes de medir en el portátil, están en
 [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram) (en inglés).
 
@@ -154,9 +152,7 @@ Medido de la misma manera, en los mismos dos PC.
 </td></tr>
 </table>
 
-Un prompt de 10,000 tokens se lee a 1,530 tokens/s en el portátil y a 5,600 en la estación de trabajo. llama.cpp con
-el modelo entero en la tarjeta de la estación de trabajo escribió unos 180 tokens/s y leyó los prompts a entre 6,000 y
-9,000.
+Un prompt de 10,000 tokens se lee a 1,530 tokens/s en el portátil y a 5,600 en la estación de trabajo.
 
 ### Gemma 4 26B-A4B
 
@@ -183,9 +179,7 @@ Medido de la misma manera, en los mismos dos PC.
 </td></tr>
 </table>
 
-Un prompt de 10,000 tokens se lee a 2,080 tokens/s en el portátil y a 6,800 en la estación de trabajo. llama.cpp con
-el modelo entero en la tarjeta de la estación de trabajo escribió unos 165 tokens/s y leyó los prompts a entre 6,000 y
-9,000.
+Un prompt de 10,000 tokens se lee a 2,080 tokens/s en el portátil y a 6,800 en la estación de trabajo.
 
 Los cuatro modelos del motor propio de PolyStrata se midieron con su benchmark, que puedes ejecutar en tu PC:
 `python polystrata.py benchmark --model <name> --prompt-tokens 24000`

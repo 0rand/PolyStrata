@@ -92,8 +92,7 @@ Medido para o PolyStrata numa estação de trabalho, com uma conversa curta e um
 </td></tr>
 </table>
 
-No mesmo PC, o llama.cpp escreveu 26 tokens/s com o arquivo 3.0BIT e leu cerca de 265. O GLM 5.3 Flash é um modelo
-muito maior que os outros, e só cerca de um quinto dos experts dele cabe nos 32 GB desta placa, por isso
+O GLM 5.3 Flash é um modelo muito maior que os outros, e só cerca de um quinto dos experts dele cabe nos 32 GB desta placa, por isso
 ele escreve mais devagar. O que foi medido e como: [docs/GLM.md](docs/GLM.md#what-it-was-measured-on) (em inglês).
 
 ### Qwen3.6-35B-A3B
@@ -124,8 +123,7 @@ de trabalho cuja placa guarda o modelo inteiro.
 </table>
 
 Um prompt de 10,000 tokens é lido a 1,620 tokens/s no notebook e a 6,100 na estação de trabalho.
-O llama.cpp, com o modelo inteiro na placa da estação de trabalho, escreveu cerca de 180 tokens/s e leu
-prompts a 6,000 a 9,000. Ele precisa de uma placa em que o modelo caiba. Os números da placa da estação limitada a 8
+Os números da placa da estação limitada a 8
 GB, um substituto de antes da medição no notebook, estão em [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram) (em
 inglês).
 
@@ -154,8 +152,7 @@ Medido do mesmo jeito, nos mesmos dois PCs.
 </td></tr>
 </table>
 
-Um prompt de 10,000 tokens é lido a 1,530 tokens/s no notebook e a 5,600 na estação de trabalho. O llama.cpp, com o
-modelo inteiro na placa da estação de trabalho, escreveu cerca de 180 tokens/s e leu prompts a 6,000 a 9,000.
+Um prompt de 10,000 tokens é lido a 1,530 tokens/s no notebook e a 5,600 na estação de trabalho.
 
 ### Gemma 4 26B-A4B
 
@@ -182,8 +179,7 @@ Medido do mesmo jeito, nos mesmos dois PCs.
 </td></tr>
 </table>
 
-Um prompt de 10,000 tokens é lido a 2,080 tokens/s no notebook e a 6,800 na estação de trabalho. O llama.cpp, com o
-modelo inteiro na placa da estação de trabalho, escreveu cerca de 165 tokens/s e leu prompts a 6,000 a 9,000.
+Um prompt de 10,000 tokens é lido a 2,080 tokens/s no notebook e a 6,800 na estação de trabalho.
 
 Os quatro modelos do motor próprio do PolyStrata foram medidos com o benchmark dele, que você pode rodar no seu PC:
 `python polystrata.py benchmark --model <name> --prompt-tokens 24000`
