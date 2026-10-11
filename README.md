@@ -5,7 +5,7 @@
 <p align="center"><b>Run large AI models on your own PC</b><br>
 Qwen3.8-Flash-Next, GLM 5.3 Flash, Qwen3.6, Ornith 1.5 and Gemma 4 · free and open source</p>
 
-<p align="center"><img src="docs/media/speed.svg" width="820" alt="Tokens per second while writing an answer: 71 for Qwen3.6-35B-A3B on a laptop with an 8 GB card, 332 to 334 on an RTX 5090"></p>
+<p align="center"><img src="docs/media/speed.svg" width="820" alt="Tokens per second while writing an answer: 84 to 87 for Qwen3.6-35B-A3B on a laptop with an 8 GB card, 385 to 393 on an RTX 5090"></p>
 
 <p align="center"><a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4"><img src="docs/media/pagoda-preview.webp" width="720" alt="A voxel pagoda garden the model wrote, running in the browser"></a><br>
 <sub>A voxel pagoda garden, 1 shot prompt running on an RTX 5070 with <a href="https://github.com/Niko1221/Strata">Strata</a> (Qwen3.8-Flash-Next IQ3_S, 128K context) ·
@@ -32,6 +32,7 @@ with an 8 GB card as well.
 The server can change between installed models while it runs ([how](docs/BACKENDS.md#changing-the-model)).
 
 PolyStrata is built on [Strata](https://github.com/Niko1221/Strata) by Niko1221.
+Why it is a separate repo, AMD and smaller cards, fine-tunes and other questions: [FAQ](docs/FAQ.md).
 
 ## How fast is it?
 
@@ -74,7 +75,7 @@ about 100-140 tokens per second. Long chats and other cards: [speed of each size
 
 ### GLM 5.3 Flash
 
-Measured for PolyStrata on one workstation, with a short chat and a 28K-token prompt.
+Measured for PolyStrata on one workstation, with a short chat and a 29K-token prompt.
 
 <table>
 <tr><th>NVIDIA: RTX 5090 (32 GB), Xeon Platinum 8470Q (25 vCPU), 120 GB RAM</th></tr>
@@ -82,9 +83,9 @@ Measured for PolyStrata on one workstation, with a short chat and a 28K-token pr
 
 | Size | Writes answers | Reads your prompt |
 | --- | ---: | ---: |
-| **3.0BIT** | 57-59 tokens/s | 784-785 tokens/s |
-| **UD-IQ2_XXS** | 40-44 tokens/s | 1,020 tokens/s |
-| **REAP50-Q3_K_M** | 56-62 tokens/s | 1,250 tokens/s |
+| **3.0BIT** | 59-66 tokens/s | 820 tokens/s |
+| **UD-IQ2_XXS** | 47-50 tokens/s | 1,040-1,050 tokens/s |
+| **REAP50-Q3_K_M** | 59-66 tokens/s | 1,300-1,310 tokens/s |
 
 </td></tr>
 </table>
@@ -105,22 +106,22 @@ whose card holds the whole model.
 
 | Size | Writes answers | Reads your prompt |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 71 tokens/s | 1,390 tokens/s |
-| **UD-Q2_K_XL** | 91 tokens/s | 1,320 tokens/s |
-| **UD-Q4_K_M** | 58-61 tokens/s | 1,100-1,350 tokens/s |
+| **UD-Q3_K_M** | 84-87 tokens/s | 1,500-1,620 tokens/s |
+| **UD-Q2_K_XL** | 110-111 tokens/s | 1,500-1,510 tokens/s |
+| **UD-Q4_K_M** | 79-86 tokens/s | 1,560-1,570 tokens/s |
 
 </td><td>
 
 | Size | Writes answers | Reads your prompt |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 332-334 tokens/s | 5,520-5,580 tokens/s |
-| **UD-Q2_K_XL** | 368-369 tokens/s | 5,540-5,580 tokens/s |
-| **UD-Q4_K_M** | 333-337 tokens/s | 5,630-5,660 tokens/s |
+| **UD-Q3_K_M** | 385-393 tokens/s | 6,350-6,550 tokens/s |
+| **UD-Q2_K_XL** | 410-438 tokens/s | 5,970-6,440 tokens/s |
+| **UD-Q4_K_M** | 328-393 tokens/s | 6,230-6,580 tokens/s |
 
 </td></tr>
 </table>
 
-A shorter prompt is read faster: one of 10,000 tokens at 1,450 tokens/s on the laptop and at 5,500 on the workstation.
+A prompt of 10,000 tokens is read at 1,620 tokens/s on the laptop and at 6,100 on the workstation.
 llama.cpp with the whole model on the workstation's card wrote about 180 tokens/s and read prompts at 6,000 to 9,000.
 It needs a card the model fits. The workstation's card held to 8 GB, a stand-in from before the laptop was measured,
 is in [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram).
@@ -135,22 +136,22 @@ Measured the same way, on the same two PCs.
 
 | Size | Writes answers | Reads your prompt |
 | --- | ---: | ---: |
-| **APEX-I-COMPACT** | 70 tokens/s | 1,340 tokens/s |
-| **APEX-I-MINI** | 63-68 tokens/s | 1,300-1,310 tokens/s |
-| **APEX-I-QUALITY** | 42-48 tokens/s | 1,290-1,320 tokens/s |
+| **APEX-I-COMPACT** | 72-76 tokens/s | 1,540 tokens/s |
+| **APEX-I-MINI** | 77-79 tokens/s | 1,470 tokens/s |
+| **APEX-I-QUALITY** | 59-63 tokens/s | 940-1,510 tokens/s |
 
 </td><td>
 
 | Size | Writes answers | Reads your prompt |
 | --- | ---: | ---: |
-| **APEX-I-COMPACT** | 267-272 tokens/s | 5,700-5,890 tokens/s |
-| **APEX-I-MINI** | 265-279 tokens/s | 5,450-5,510 tokens/s |
-| **APEX-I-QUALITY** | 263-265 tokens/s | 5,600-5,610 tokens/s |
+| **APEX-I-COMPACT** | 303-315 tokens/s | 6,080-6,360 tokens/s |
+| **APEX-I-MINI** | 289-300 tokens/s | 5,940-6,170 tokens/s |
+| **APEX-I-QUALITY** | 289-298 tokens/s | 6,040-6,390 tokens/s |
 
 </td></tr>
 </table>
 
-A prompt of 10,000 tokens is read at 1,380 tokens/s on the laptop and at 5,500 on the workstation. llama.cpp with the
+A prompt of 10,000 tokens is read at 1,530 tokens/s on the laptop and at 5,600 on the workstation. llama.cpp with the
 whole model on the workstation's card wrote about 180 tokens/s and read prompts at 6,000 to 9,000.
 
 ### Gemma 4 26B-A4B
@@ -163,27 +164,29 @@ Measured the same way, on the same two PCs.
 
 | Size | Writes answers | Reads your prompt |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 70-71 tokens/s | 1,910 tokens/s |
-| **UD-Q2_K_XL** | 86-87 tokens/s | 1,840 tokens/s |
-| **UD-Q4_K_M** | 67 tokens/s | 1,840 tokens/s |
+| **UD-Q3_K_M** | 85 tokens/s | 2,100 tokens/s |
+| **UD-Q2_K_XL** | 94-95 tokens/s | 1,920-2,000 tokens/s |
+| **UD-Q4_K_M** | 74-75 tokens/s | 2,010 tokens/s |
 
 </td><td>
 
 | Size | Writes answers | Reads your prompt |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 306 tokens/s | 7,170-7,210 tokens/s |
-| **UD-Q2_K_XL** | 315 tokens/s | 6,920 tokens/s |
-| **UD-Q4_K_M** | 301 tokens/s | 7,120-7,210 tokens/s |
+| **UD-Q3_K_M** | 326-349 tokens/s | 7,880-8,230 tokens/s |
+| **UD-Q2_K_XL** | 316-331 tokens/s | 7,120-7,860 tokens/s |
+| **UD-Q4_K_M** | 316-338 tokens/s | 7,040-8,050 tokens/s |
 
 </td></tr>
 </table>
 
-A prompt of 10,000 tokens is read at 1,950 tokens/s on the laptop and at 5,500 on the workstation. llama.cpp with the
+A prompt of 10,000 tokens is read at 2,080 tokens/s on the laptop and at 6,800 on the workstation. llama.cpp with the
 whole model on the workstation's card wrote about 165 tokens/s and read prompts at 6,000 to 9,000.
 
 The four models of PolyStrata's own engine were measured with its benchmark, which you can run on your PC:
 `python polystrata.py benchmark --model <name> --prompt-tokens 24000`
 ([what it sends and prints](docs/BACKENDS.md#benchmark)).
+What others measured on their own cards, and how to compare with llama.cpp on yours:
+[community results](docs/COMMUNITY_BENCHMARKS.md#the-models-polystrata-adds).
 
 ## What you need
 
@@ -426,7 +429,7 @@ Where they differ:
 | **Pictures** | Say yes to "Images?" in setup. Then click **Picture** in the chat, or attach pictures in your app. AMD cards read pictures on Linux through the processor; on Windows they can't yet. | Not yet. | Say yes to "Images?" in setup, then as with Qwen3.8-Flash-Next. On a card with less than 16 GB the picture encoder runs on the processor, and a picture takes a few seconds. |
 | **Several requests** | One at a time by default, the others wait. `"parallel": 2` answers several at once ([BATCHING.md](docs/BATCHING.md)); on a 12 GB card each answer gets slower. | One at a time, the others wait. | One at a time, the others wait. |
 | **Several conversations** | The last one is kept, so follow-up messages start in seconds. Two engine arguments keep several in RAM ([details](docs/DETAILS.md#using-it)). | The last one is kept. Setup asks whether to keep several in RAM, so that an agent and its subagents take turns without their prompts being read again ([how](docs/GLM.md#several-conversations-at-once)). | As GLM 5.3 Flash. |
-| **Long prompts** | The first message of a chat is read in full, about 1 minute per 30,000 tokens. | The first message is read in full, about 40 seconds per 30,000 tokens. | The first message is read in full: 30,000 tokens take 6 to 8 seconds on the workstation and 16 to 22 seconds on the 8 GB laptop. |
+| **Long prompts** | The first message of a chat is read in full, about 1 minute per 30,000 tokens. | The first message is read in full, about 40 seconds per 30,000 tokens. | The first message is read in full: 30,000 tokens take 4 to 5 seconds on the workstation and 14 to 20 seconds on the 8 GB laptop. |
 
 More: [where your chats are stored](docs/INSTALL.md#where-things-are-stored), [the API](docs/DETAILS.md#using-it).
 

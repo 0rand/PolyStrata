@@ -5,7 +5,7 @@
 <p align="center"><b>Große KI-Modelle auf deinem eigenen PC</b><br>
 Qwen3.8-Flash-Next, GLM 5.3 Flash, Qwen3.6, Ornith 1.5 und Gemma 4 · kostenlos und Open Source</p>
 
-<p align="center"><img src="docs/media/speed.svg" width="820" alt="Tokens pro Sekunde beim Schreiben einer Antwort: 71 mit Qwen3.6-35B-A3B auf einem Laptop mit 8-GB-Karte, 332 bis 334 auf einer RTX 5090"></p>
+<p align="center"><img src="docs/media/speed.svg" width="820" alt="Tokens pro Sekunde beim Schreiben einer Antwort: 84 bis 87 mit Qwen3.6-35B-A3B auf einem Laptop mit 8-GB-Karte, 385 bis 393 auf einer RTX 5090"></p>
 
 <p align="center"><a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4"><img src="docs/media/pagoda-preview.webp" width="720" alt="Ein Voxel-Pagodengarten, den das Modell in PolyStrata geschrieben hat, läuft im Browser"></a><br>
 <sub>Ein Voxel-Pagodengarten aus einem einzigen Prompt, auf einer RTX 5070 mit <a href="https://github.com/Niko1221/Strata">Strata</a> (Qwen3.8-Flash-Next IQ3_S, 128K Kontext) ·
@@ -34,6 +34,7 @@ Der Server kann im laufenden Betrieb zwischen installierten Modellen wechseln
 ([wie](docs/BACKENDS.md#changing-the-model), englisch).
 
 PolyStrata baut auf [Strata](https://github.com/Niko1221/Strata) von Niko1221 auf.
+Warum das ein eigenes Repo ist, AMD- und kleinere Karten, Fine-Tunes und andere Fragen: [FAQ](docs/FAQ.md) (englisch).
 
 ## Wie schnell ist es?
 
@@ -78,7 +79,7 @@ RTX 3090 (24 GB) sollte etwa 100-140 Tokens pro Sekunde schreiben. Lange Chats u
 
 ### GLM 5.3 Flash
 
-Gemessen für PolyStrata auf einer Workstation, mit einem kurzen Chat und einem Prompt von 28K Tokens.
+Gemessen für PolyStrata auf einer Workstation, mit einem kurzen Chat und einem Prompt von 29K Tokens.
 
 <table>
 <tr><th>NVIDIA: RTX 5090 (32 GB), Xeon Platinum 8470Q (25 vCPU), 120 GB RAM</th></tr>
@@ -86,9 +87,9 @@ Gemessen für PolyStrata auf einer Workstation, mit einem kurzen Chat und einem 
 
 | Größe | Schreibt Antworten | Liest deinen Prompt |
 | --- | ---: | ---: |
-| **3.0BIT** | 57-59 Tokens/s | 784-785 Tokens/s |
-| **UD-IQ2_XXS** | 40-44 Tokens/s | 1,020 Tokens/s |
-| **REAP50-Q3_K_M** | 56-62 Tokens/s | 1,250 Tokens/s |
+| **3.0BIT** | 59-66 Tokens/s | 820 Tokens/s |
+| **UD-IQ2_XXS** | 47-50 Tokens/s | 1,040-1,050 Tokens/s |
+| **REAP50-Q3_K_M** | 59-66 Tokens/s | 1,300-1,310 Tokens/s |
 
 </td></tr>
 </table>
@@ -109,23 +110,23 @@ eine Workstation, deren Karte das ganze Modell hält.
 
 | Größe | Schreibt Antworten | Liest deinen Prompt |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 71 Tokens/s | 1,390 Tokens/s |
-| **UD-Q2_K_XL** | 91 Tokens/s | 1,320 Tokens/s |
-| **UD-Q4_K_M** | 58-61 Tokens/s | 1,100-1,350 Tokens/s |
+| **UD-Q3_K_M** | 84-87 Tokens/s | 1,500-1,620 Tokens/s |
+| **UD-Q2_K_XL** | 110-111 Tokens/s | 1,500-1,510 Tokens/s |
+| **UD-Q4_K_M** | 79-86 Tokens/s | 1,560-1,570 Tokens/s |
 
 </td><td>
 
 | Größe | Schreibt Antworten | Liest deinen Prompt |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 332-334 Tokens/s | 5,520-5,580 Tokens/s |
-| **UD-Q2_K_XL** | 368-369 Tokens/s | 5,540-5,580 Tokens/s |
-| **UD-Q4_K_M** | 333-337 Tokens/s | 5,630-5,660 Tokens/s |
+| **UD-Q3_K_M** | 385-393 Tokens/s | 6,350-6,550 Tokens/s |
+| **UD-Q2_K_XL** | 410-438 Tokens/s | 5,970-6,440 Tokens/s |
+| **UD-Q4_K_M** | 328-393 Tokens/s | 6,230-6,580 Tokens/s |
 
 </td></tr>
 </table>
 
-Ein kürzerer Prompt wird schneller gelesen: einer von 10,000 Tokens mit 1,450 Tokens/s auf dem Laptop und mit 5,500
-auf der Workstation. llama.cpp mit dem ganzen Modell auf der Karte der Workstation schrieb etwa 180 Tokens/s und las
+Ein Prompt von 10,000 Tokens wird auf dem Laptop mit 1,620 Tokens/s gelesen und auf der Workstation mit 6,100.
+llama.cpp mit dem ganzen Modell auf der Karte der Workstation schrieb etwa 180 Tokens/s und las
 Prompts mit 6,000 bis 9,000. Es braucht eine Karte, auf die das Modell passt. Die Zahlen der auf 8 GB begrenzten
 Workstation-Karte, ein Ersatz aus der Zeit vor der Messung auf dem Laptop, stehen in
 [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram) (englisch).
@@ -140,22 +141,22 @@ Genauso gemessen, auf denselben zwei PCs.
 
 | Größe | Schreibt Antworten | Liest deinen Prompt |
 | --- | ---: | ---: |
-| **APEX-I-COMPACT** | 70 Tokens/s | 1,340 Tokens/s |
-| **APEX-I-MINI** | 63-68 Tokens/s | 1,300-1,310 Tokens/s |
-| **APEX-I-QUALITY** | 42-48 Tokens/s | 1,290-1,320 Tokens/s |
+| **APEX-I-COMPACT** | 72-76 Tokens/s | 1,540 Tokens/s |
+| **APEX-I-MINI** | 77-79 Tokens/s | 1,470 Tokens/s |
+| **APEX-I-QUALITY** | 59-63 Tokens/s | 940-1,510 Tokens/s |
 
 </td><td>
 
 | Größe | Schreibt Antworten | Liest deinen Prompt |
 | --- | ---: | ---: |
-| **APEX-I-COMPACT** | 267-272 Tokens/s | 5,700-5,890 Tokens/s |
-| **APEX-I-MINI** | 265-279 Tokens/s | 5,450-5,510 Tokens/s |
-| **APEX-I-QUALITY** | 263-265 Tokens/s | 5,600-5,610 Tokens/s |
+| **APEX-I-COMPACT** | 303-315 Tokens/s | 6,080-6,360 Tokens/s |
+| **APEX-I-MINI** | 289-300 Tokens/s | 5,940-6,170 Tokens/s |
+| **APEX-I-QUALITY** | 289-298 Tokens/s | 6,040-6,390 Tokens/s |
 
 </td></tr>
 </table>
 
-Ein Prompt von 10,000 Tokens wird auf dem Laptop mit 1,380 Tokens/s gelesen und auf der Workstation mit 5,500.
+Ein Prompt von 10,000 Tokens wird auf dem Laptop mit 1,530 Tokens/s gelesen und auf der Workstation mit 5,600.
 llama.cpp mit dem ganzen Modell auf der Karte der Workstation schrieb etwa 180 Tokens/s und las Prompts mit 6,000 bis
 9,000.
 
@@ -169,28 +170,30 @@ Genauso gemessen, auf denselben zwei PCs.
 
 | Größe | Schreibt Antworten | Liest deinen Prompt |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 70-71 Tokens/s | 1,910 Tokens/s |
-| **UD-Q2_K_XL** | 86-87 Tokens/s | 1,840 Tokens/s |
-| **UD-Q4_K_M** | 67 Tokens/s | 1,840 Tokens/s |
+| **UD-Q3_K_M** | 85 Tokens/s | 2,100 Tokens/s |
+| **UD-Q2_K_XL** | 94-95 Tokens/s | 1,920-2,000 Tokens/s |
+| **UD-Q4_K_M** | 74-75 Tokens/s | 2,010 Tokens/s |
 
 </td><td>
 
 | Größe | Schreibt Antworten | Liest deinen Prompt |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 306 Tokens/s | 7,170-7,210 Tokens/s |
-| **UD-Q2_K_XL** | 315 Tokens/s | 6,920 Tokens/s |
-| **UD-Q4_K_M** | 301 Tokens/s | 7,120-7,210 Tokens/s |
+| **UD-Q3_K_M** | 326-349 Tokens/s | 7,880-8,230 Tokens/s |
+| **UD-Q2_K_XL** | 316-331 Tokens/s | 7,120-7,860 Tokens/s |
+| **UD-Q4_K_M** | 316-338 Tokens/s | 7,040-8,050 Tokens/s |
 
 </td></tr>
 </table>
 
-Ein Prompt von 10,000 Tokens wird auf dem Laptop mit 1,950 Tokens/s gelesen und auf der Workstation mit 5,500.
+Ein Prompt von 10,000 Tokens wird auf dem Laptop mit 2,080 Tokens/s gelesen und auf der Workstation mit 6,800.
 llama.cpp mit dem ganzen Modell auf der Karte der Workstation schrieb etwa 165 Tokens/s und las Prompts mit 6,000 bis
 9,000.
 
 Die vier Modelle der eigenen Engine von PolyStrata wurden mit ihrem Benchmark gemessen, den du auch auf deinem PC
 laufen lassen kannst: `python polystrata.py benchmark --model <name> --prompt-tokens 24000`
 ([was er schickt und ausgibt](docs/BACKENDS.md#benchmark), englisch).
+Was andere auf ihren eigenen Karten gemessen haben und wie du auf deinem PC mit llama.cpp vergleichst:
+[Ergebnisse aus der Community](docs/COMMUNITY_BENCHMARKS.md#the-models-polystrata-adds) (englisch).
 
 ## Was du brauchst
 
@@ -438,7 +441,7 @@ Wo sie sich unterscheiden:
 | **Bilder** | Antworte im Setup mit Ja auf „Images?“. Klick dann im Chat auf **Picture** oder hänge Bilder in deiner App an. AMD-Karten lesen Bilder unter Linux über den Prozessor; unter Windows geht das noch nicht. | Noch nicht. | Antworte im Setup mit Ja auf „Images?“, dann wie bei Qwen3.8-Flash-Next. Auf einer Karte mit weniger als 16 GB läuft der Bild-Encoder auf dem Prozessor, und ein Bild dauert ein paar Sekunden. |
 | **Eine Anfrage nach der anderen** | Standardmäßig beantwortet PolyStrata eine Anfrage, die anderen warten. Um mehrere gleichzeitig zu beantworten, setz `"parallel": 2` ([BATCHING.md](docs/BATCHING.md)). Auf einer 12-GB-Karte wird dadurch jede Antwort langsamer. | Eine nach der anderen, die anderen warten. | Eine nach der anderen, die anderen warten. |
 | **Mehrere Unterhaltungen** | Die letzte bleibt erhalten, Folgenachrichten starten also in Sekunden. Zwei Engine-Argumente halten mehrere im RAM ([Details](docs/DETAILS.md#using-it)). | Die letzte bleibt erhalten. Das Setup fragt, ob mehrere im RAM bleiben sollen, damit ein Agent und seine Subagenten sich abwechseln, ohne dass ihre Prompts neu gelesen werden ([wie](docs/GLM.md#several-conversations-at-once)). | Wie GLM 5.3 Flash. |
-| **Lange Prompts** | PolyStrata liest die erste Nachricht eines Chats komplett, etwa 1 Minute pro 30,000 Tokens. Folgenachrichten starten in Sekunden. | Die erste Nachricht wird komplett gelesen, etwa 40 Sekunden pro 30,000 Tokens. | Die erste Nachricht wird ganz gelesen: 30,000 Tokens dauern auf der Workstation 6 bis 8 Sekunden und auf dem 8-GB-Laptop 16 bis 22 Sekunden. |
+| **Lange Prompts** | PolyStrata liest die erste Nachricht eines Chats komplett, etwa 1 Minute pro 30,000 Tokens. Folgenachrichten starten in Sekunden. | Die erste Nachricht wird komplett gelesen, etwa 40 Sekunden pro 30,000 Tokens. | Die erste Nachricht wird ganz gelesen: 30,000 Tokens dauern auf der Workstation 4 bis 5 Sekunden und auf dem 8-GB-Laptop 14 bis 20 Sekunden. |
 
 Mehr: [wo deine Chats gespeichert werden](docs/INSTALL.md#where-things-are-stored), [die API](docs/DETAILS.md#using-it).
 

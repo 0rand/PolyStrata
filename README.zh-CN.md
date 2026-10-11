@@ -5,7 +5,7 @@
 <p align="center"><b>在你自己的电脑上运行大型 AI 模型</b><br>
 Qwen3.8-Flash-Next、GLM 5.3 Flash、Qwen3.6、Ornith 1.5 和 Gemma 4 · 免费开源</p>
 
-<p align="center"><img src="docs/media/speed.svg" width="820" alt="写回答时每秒的 token 数：8 GB 显存的笔记本上 Qwen3.6-35B-A3B 为 71，RTX 5090 上为 332 到 334"></p>
+<p align="center"><img src="docs/media/speed.svg" width="820" alt="写回答时每秒的 token 数：8 GB 显存的笔记本上 Qwen3.6-35B-A3B 为 84 到 87，RTX 5090 上为 385 到 393"></p>
 
 <p align="center"><a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4"><img src="docs/media/pagoda-preview.webp" width="720" alt="模型写出的体素宝塔花园，在浏览器中运行"></a><br>
 <sub>体素宝塔花园，一次提示生成，在 RTX 5070 上用 <a href="https://github.com/Niko1221/Strata">Strata</a> 运行（Qwen3.8-Flash-Next IQ3_S，128K 上下文）·
@@ -30,6 +30,7 @@ PolyStrata 能在普通电脑上运行通常要用服务器才能跑的大型 AI
 服务器运行时可以在已安装的模型之间切换（[做法](docs/BACKENDS.md#changing-the-model)，英文）。
 
 PolyStrata 基于 Niko1221 的 [Strata](https://github.com/Niko1221/Strata)。
+为什么单独开一个仓库、AMD 和显存更小的显卡、微调模型等问题，见 [FAQ](docs/FAQ.md)（英文）。
 
 ## 速度有多快？
 
@@ -72,7 +73,7 @@ NVIDIA：Q2_0 用的是引擎 0.1.36，其他各行用的是 0.1.26（4K 回答�
 
 ### GLM 5.3 Flash
 
-由 PolyStrata 在一台工作站上测得，用一段短对话和一个 28K token 的提示。
+由 PolyStrata 在一台工作站上测得，用一段短对话和一个 29K token 的提示。
 
 <table>
 <tr><th>NVIDIA：RTX 5090（32 GB）、Xeon Platinum 8470Q（25 vCPU）、120 GB 内存</th></tr>
@@ -80,9 +81,9 @@ NVIDIA：Q2_0 用的是引擎 0.1.36，其他各行用的是 0.1.26（4K 回答�
 
 | 规格 | 写回答 | 读提示 |
 | --- | ---: | ---: |
-| **3.0BIT** | 57-59 tokens/s | 784-785 tokens/s |
-| **UD-IQ2_XXS** | 40-44 tokens/s | 1,020 tokens/s |
-| **REAP50-Q3_K_M** | 56-62 tokens/s | 1,250 tokens/s |
+| **3.0BIT** | 59-66 tokens/s | 820 tokens/s |
+| **UD-IQ2_XXS** | 47-50 tokens/s | 1,040-1,050 tokens/s |
+| **REAP50-Q3_K_M** | 59-66 tokens/s | 1,300-1,310 tokens/s |
 
 </td></tr>
 </table>
@@ -101,22 +102,22 @@ NVIDIA：Q2_0 用的是引擎 0.1.36，其他各行用的是 0.1.26（4K 回答�
 
 | 规格 | 写回答 | 读提示 |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 71 tokens/s | 1,390 tokens/s |
-| **UD-Q2_K_XL** | 91 tokens/s | 1,320 tokens/s |
-| **UD-Q4_K_M** | 58-61 tokens/s | 1,100-1,350 tokens/s |
+| **UD-Q3_K_M** | 84-87 tokens/s | 1,500-1,620 tokens/s |
+| **UD-Q2_K_XL** | 110-111 tokens/s | 1,500-1,510 tokens/s |
+| **UD-Q4_K_M** | 79-86 tokens/s | 1,560-1,570 tokens/s |
 
 </td><td>
 
 | 规格 | 写回答 | 读提示 |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 332-334 tokens/s | 5,520-5,580 tokens/s |
-| **UD-Q2_K_XL** | 368-369 tokens/s | 5,540-5,580 tokens/s |
-| **UD-Q4_K_M** | 333-337 tokens/s | 5,630-5,660 tokens/s |
+| **UD-Q3_K_M** | 385-393 tokens/s | 6,350-6,550 tokens/s |
+| **UD-Q2_K_XL** | 410-438 tokens/s | 5,970-6,440 tokens/s |
+| **UD-Q4_K_M** | 328-393 tokens/s | 6,230-6,580 tokens/s |
 
 </td></tr>
 </table>
 
-提示短一些读得更快：10,000 个 token 的提示，笔记本每秒读 1,450 个，工作站每秒读 5,500 个。在工作站的显卡上用 llama.cpp 把整个模型放进显存，
+10,000 个 token 的提示，笔记本每秒读 1,620 个，工作站每秒读 6,100 个。在工作站的显卡上用 llama.cpp 把整个模型放进显存，
 写回答每秒约 180 个 token，读提示每秒 6,000 到 9,000 个；它要求显卡放得下整个模型。
 把工作站的显卡限制到 8 GB 的那组数字是笔记本测出来之前的替身，现在放在 [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram)（英文）里。
 
@@ -130,22 +131,22 @@ NVIDIA：Q2_0 用的是引擎 0.1.36，其他各行用的是 0.1.26（4K 回答�
 
 | 规格 | 写回答 | 读提示 |
 | --- | ---: | ---: |
-| **APEX-I-COMPACT** | 70 tokens/s | 1,340 tokens/s |
-| **APEX-I-MINI** | 63-68 tokens/s | 1,300-1,310 tokens/s |
-| **APEX-I-QUALITY** | 42-48 tokens/s | 1,290-1,320 tokens/s |
+| **APEX-I-COMPACT** | 72-76 tokens/s | 1,540 tokens/s |
+| **APEX-I-MINI** | 77-79 tokens/s | 1,470 tokens/s |
+| **APEX-I-QUALITY** | 59-63 tokens/s | 940-1,510 tokens/s |
 
 </td><td>
 
 | 规格 | 写回答 | 读提示 |
 | --- | ---: | ---: |
-| **APEX-I-COMPACT** | 267-272 tokens/s | 5,700-5,890 tokens/s |
-| **APEX-I-MINI** | 265-279 tokens/s | 5,450-5,510 tokens/s |
-| **APEX-I-QUALITY** | 263-265 tokens/s | 5,600-5,610 tokens/s |
+| **APEX-I-COMPACT** | 303-315 tokens/s | 6,080-6,360 tokens/s |
+| **APEX-I-MINI** | 289-300 tokens/s | 5,940-6,170 tokens/s |
+| **APEX-I-QUALITY** | 289-298 tokens/s | 6,040-6,390 tokens/s |
 
 </td></tr>
 </table>
 
-10,000 个 token 的提示，笔记本每秒读 1,380 个，工作站每秒读 5,500 个。在工作站的显卡上用 llama.cpp 把整个模型放进显存，
+10,000 个 token 的提示，笔记本每秒读 1,530 个，工作站每秒读 5,600 个。在工作站的显卡上用 llama.cpp 把整个模型放进显存，
 写回答每秒约 180 个 token，读提示每秒 6,000 到 9,000 个。
 
 ### Gemma 4 26B-A4B
@@ -158,27 +159,29 @@ NVIDIA：Q2_0 用的是引擎 0.1.36，其他各行用的是 0.1.26（4K 回答�
 
 | 规格 | 写回答 | 读提示 |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 70-71 tokens/s | 1,910 tokens/s |
-| **UD-Q2_K_XL** | 86-87 tokens/s | 1,840 tokens/s |
-| **UD-Q4_K_M** | 67 tokens/s | 1,840 tokens/s |
+| **UD-Q3_K_M** | 85 tokens/s | 2,100 tokens/s |
+| **UD-Q2_K_XL** | 94-95 tokens/s | 1,920-2,000 tokens/s |
+| **UD-Q4_K_M** | 74-75 tokens/s | 2,010 tokens/s |
 
 </td><td>
 
 | 规格 | 写回答 | 读提示 |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 306 tokens/s | 7,170-7,210 tokens/s |
-| **UD-Q2_K_XL** | 315 tokens/s | 6,920 tokens/s |
-| **UD-Q4_K_M** | 301 tokens/s | 7,120-7,210 tokens/s |
+| **UD-Q3_K_M** | 326-349 tokens/s | 7,880-8,230 tokens/s |
+| **UD-Q2_K_XL** | 316-331 tokens/s | 7,120-7,860 tokens/s |
+| **UD-Q4_K_M** | 316-338 tokens/s | 7,040-8,050 tokens/s |
 
 </td></tr>
 </table>
 
-10,000 个 token 的提示，笔记本每秒读 1,950 个，工作站每秒读 5,500 个。在工作站的显卡上用 llama.cpp 把整个模型放进显存，
+10,000 个 token 的提示，笔记本每秒读 2,080 个，工作站每秒读 6,800 个。在工作站的显卡上用 llama.cpp 把整个模型放进显存，
 写回答每秒约 165 个 token，读提示每秒 6,000 到 9,000 个。
 
 用 PolyStrata 自己引擎的这四个模型，都是用它自带的跑分测的，你也可以在自己的电脑上跑：
 `python polystrata.py benchmark --model <name> --prompt-tokens 24000`
 （[它发什么、打印什么](docs/BACKENDS.md#benchmark)，英文）。
+别人在自己的显卡上测的结果，以及怎么在你的电脑上和 llama.cpp 对比：
+[社区测试结果](docs/COMMUNITY_BENCHMARKS.md#the-models-polystrata-adds)（英文）。
 
 ## 你需要什么
 
@@ -410,7 +413,7 @@ GLM 5.3 Flash 的其他量化版本暂时不支持：[还缺什么](docs/GLM.md#
 | **图片** | 在安装时对“Images?”选是。然后在聊天里点 **Picture**，或在你的应用里附上图片。AMD 显卡在 Linux 上通过处理器识别图片；在 Windows 上暂时还不行。 | 暂时不支持。 | 在安装时对“Images?”选是，之后和 Qwen3.8-Flash-Next 一样。显存不到 16 GB 的卡上，图片编码器在处理器上跑，一张图片要几秒。 |
 | **多个请求** | 默认一次只回答一个，其他请求排队等待。设置 `"parallel": 2` 可以同时回答多个（[BATCHING.md](docs/BATCHING.md)）；在 12 GB 显卡上，这会让每个回答变慢。 | 一次只回答一个，其他请求排队等待。 | 一次只回答一个，其他请求排队等待。 |
 | **多个对话** | 保留最近的一个对话，所以后续消息几秒内就开始回答。加两个引擎参数可以在内存里保留多个（[详情](docs/DETAILS.md#using-it)）。 | 保留最近的一个对话。安装程序会问要不要在内存里保留多个，这样智能体和子代理轮流请求时不用重读提示（[原理](docs/GLM.md#several-conversations-at-once)）。 | 和 GLM 5.3 Flash 一样。 |
-| **长提示** | 对话的第一条消息要完整读入，大约每 30,000 个 token 需要 1 分钟。 | 第一条消息要完整读入，大约每 30,000 个 token 需要 40 秒。 | 第一条消息要完整读入：30,000 个 token，工作站要 6 到 8 秒，8 GB 显卡的笔记本要 16 到 22 秒。 |
+| **长提示** | 对话的第一条消息要完整读入，大约每 30,000 个 token 需要 1 分钟。 | 第一条消息要完整读入，大约每 30,000 个 token 需要 40 秒。 | 第一条消息要完整读入：30,000 个 token，工作站要 4 到 5 秒，8 GB 显卡的笔记本要 14 到 20 秒。 |
 
 更多：[聊天记录存在哪里](docs/INSTALL.md#where-things-are-stored)、[API](docs/DETAILS.md#using-it)。
 

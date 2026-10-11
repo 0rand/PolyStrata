@@ -10,6 +10,77 @@ includes hardware, settings, and per-run JSON. The
 [technical details](DETAILS.md#speed-measured) explain the published measurements
 and their limits. Report what you actually measured and label estimates separately.
 
+## The models PolyStrata adds
+
+Qwen3.6-35B-A3B, Ornith 1.5, Gemma 4 26B-A4B and GLM 5.3 Flash run on PolyStrata's own engine, `strata-poly`, so
+their reports are listed here, apart from Strata's. The three below were posted on Reddit by people who ran the
+engine of v0.1.41-poly.1 or an earlier one. The numbers are the posters' own, and "not stated" marks what a post
+leaves out.
+
+| Reported by | GPU | CPU, RAM, system | Model and file | Context | MTP | Writes, tokens/s | Reads, tokens/s | Before, or compared with |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| [u/Present_Resource4022](https://www.reddit.com/r/LocalLLM/s/skrEbN9f48) | RTX 4070 SUPER 12 GB | CPU not stated; 32 GB DDR5-6000; Windows 11 | Qwen3.6-35B-A3B, HauhauCS uncensored Aggressive TTQ Q4_K_M | about 8K / about 32K | on | 140 / 100 | 2,800 to 3,300 | llama.cpp at 8K: about 77 writing and 2,600 reading, settings not stated |
+| [u/hope_it_helps](https://www.reddit.com/r/LocalLLM/comments/1x22inc/comment/pf1lr00/) | RTX 4070 Ti 12 GB | not stated | Ornith 1.5 APEX-I-Compact | not stated | not stated | about 90, 60 at the slowest | not stated | usually 40 before, engine not stated |
+| [u/Sensitive_Song4219](https://www.reddit.com/r/LocalLLM/comments/1x22inc/comment/pf3r111/) | RTX 5060 Laptop 8 GB | Core Ultra 9 275HX; 32 GB DDR5; system not stated | Tiel Coder 35B-A3B, file not stated | not stated | not stated | maybe 20% faster than before, no figure | 1,000 to 1,500; 1,016 at the slowest on a large read, over 1,400 in an auto-compact | 200 to 350 reading before, engine not stated |
+
+The HauhauCS file and Tiel Coder are not among the files setup offers. How to give setup such a file is in the
+[FAQ](FAQ.md#can-i-run-a-fine-tune-or-another-model-with-the-same-architecture).
+
+To add yours, open an issue at [VecSzn/PolyStrata](https://github.com/VecSzn/PolyStrata/issues) with what
+[What to record](#what-to-record) lists. `python polystrata.py benchmark --model <name> --prompt-tokens 24000`
+gives the two speeds the README uses ([what it sends and prints](BACKENDS.md#benchmark)).
+
+### Comparing with llama.cpp
+
+`bench/bench_vs_llama.py` is the script Strata used for
+[its own comparison](../bench/results/2026-10-06-llamacpp-0.6.0/README.md). It starts PolyStrata and llama.cpp's
+`llama-server` in turns on the same GGUF, one engine on the card at a time, sends both the same prompts and prints
+the medians. With a size that setup has installed:
+
+1. Stop PolyStrata and anything else that uses the card.
+2. Download `llama-server` from llama.cpp's [releases](https://github.com/ggml-org/llama.cpp/releases), the CUDA
+   build for an NVIDIA card. Qwen3.6's draft block needs `--spec-type draft-mtp`, which b11540 has.
+3. Make a folder for the run and copy `prompt-4k.txt` and `prompt-32k.txt` into it from
+   `bench/results/2026-10-06-llamacpp-0.6.0/`: the first 4,000 and 32,000 tokens of Strata's docs.
+4. Save a file like this one as `machine.json` in the PolyStrata folder, with your paths: the size's GGUF,
+   `llama-server`, the run config setup wrote for the size (`strata-<size>.json` in the PolyStrata folder), the
+   PolyStrata folder's `serve` folder and the PolyStrata folder.
+
+   ```json
+   {
+    "gguf": "D:/PolyStrata-data/models/qwen36-UD-Q3_K_M/Qwen3.6-35B-A3B-UD-Q3_K_M.gguf",
+    "llama_server": "D:/llama.cpp/llama-server.exe",
+    "strata_cfg": "D:/PolyStrata/strata-qwen36-ud-q3_k_m.json",
+    "serve": "D:/PolyStrata/serve",
+    "cwd": "D:/PolyStrata",
+    "configs": [
+     {"name": "polystrata", "kind": "strata", "args": [], "override": {"--max-context": "36864"}},
+     {"name": "llama-mtp", "kind": "llama", "args": ["--fit", "on", "-c", "36864", "-fa", "on",
+      "-ctk", "q8_0", "-ctv", "q8_0", "--spec-type", "draft-mtp", "--spec-draft-n-max", "2"]},
+     {"name": "llama", "kind": "llama", "args": ["--fit", "on", "-c", "36864", "-fa", "on",
+      "-ctk", "q8_0", "-ctv", "q8_0"]}
+    ]
+   }
+   ```
+
+5. Run it from the PolyStrata folder with setup's Python (`.venv/bin/python` on Linux), then print the table:
+
+   ```
+   .venv\Scripts\python.exe bench\bench_vs_llama.py run --machine machine.json --out <run folder> --rounds 3
+   .venv\Scripts\python.exe bench\bench_vs_llama.py summary --out <run folder>
+   ```
+
+A round starts one engine, warms it up with two requests, sends the 4K prompt twice and the 32K prompt once at
+temperature 0 and again at 0.7, each for up to 256 tokens of answer, and stops it; then the next engine starts.
+Rounds alternate the order of the engines. The summary gives medians: prompt and answer speed, the server's prompt
+time, the share of draft tokens accepted and the peak VRAM. Every request, and the command that started each
+engine, is in `<run folder>/raw/`, and the engines' logs are in the run folder.
+
+`--fit on` lets llama.cpp decide how many layers' experts go to the processor. A number picked by hand with
+`-ngl 99 --n-cpu-moe N` can be faster; on the README's 8 GB laptop it was N = 30 for Qwen3.6 UD-Q3_K_M. The
+context of 36,864 on both sides leaves room for the 32K prompt and its answer, and `-fa on` with the q8_0 cache is
+how Strata's comparison ran llama.cpp. The example is for Qwen3.6 UD-Q3_K_M, the size this was run with here.
+
 ## Community reports
 
 - [2026-09-30: RTX 5090, Core Ultra 9 285K, 64 GB RAM](../bench/results/2026-09-30-community-rtx-5090/README.md):

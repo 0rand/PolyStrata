@@ -5,7 +5,7 @@
 <p align="center"><b>大きな AI モデルを、手元の PC で動かす</b><br>
 Qwen3.8-Flash-Next、GLM 5.3 Flash、Qwen3.6、Ornith 1.5、Gemma 4 · 無料のオープンソース</p>
 
-<p align="center"><img src="docs/media/speed.svg" width="820" alt="回答を書く速さ（トークン/秒）：8 GB のノート PC で Qwen3.6-35B-A3B は 71、RTX 5090 で 332〜334"></p>
+<p align="center"><img src="docs/media/speed.svg" width="820" alt="回答を書く速さ（トークン/秒）：8 GB のノート PC で Qwen3.6-35B-A3B は 84〜87、RTX 5090 で 385〜393"></p>
 
 <p align="center"><a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4"><img src="docs/media/pagoda-preview.webp" width="720" alt="PolyStrata のモデルが書いたボクセルの五重塔の庭。ブラウザで動いている様子"></a><br>
 <sub>ボクセルの五重塔の庭。1 回のプロンプトで作成し、RTX 5070 上の <a href="https://github.com/Niko1221/Strata">Strata</a>（Qwen3.8-Flash-Next IQ3_S、128K コンテキスト）で実行 ·
@@ -32,6 +32,7 @@ PolyStrata は、ふつうはサーバーが必要な大きな AI モデルを�
 サーバーは動かしたまま、インストール済みのモデルを切り替えられます（[方法](docs/BACKENDS.md#changing-the-model)、英語）。
 
 PolyStrata は Niko1221 の [Strata](https://github.com/Niko1221/Strata) をもとにしています。
+別のリポジトリにしている理由、AMD や VRAM の少ないカード、ファインチューンなどの質問は [FAQ](docs/FAQ.md)（英語）にあります。
 
 ## どのくらい速い？
 
@@ -74,7 +75,7 @@ NVIDIA：Q2_0 はエンジン 0.1.36、ほかの行は 0.1.26 で測定（回答
 
 ### GLM 5.3 Flash
 
-PolyStrata が 1 台のワークステーションで、短いチャットと 28K トークンのプロンプトで測った値です。
+PolyStrata が 1 台のワークステーションで、短いチャットと 29K トークンのプロンプトで測った値です。
 
 <table>
 <tr><th>NVIDIA: RTX 5090 (32 GB), Xeon Platinum 8470Q (25 vCPU), 120 GB RAM</th></tr>
@@ -82,9 +83,9 @@ PolyStrata が 1 台のワークステーションで、短いチャットと 28
 
 | サイズ | 回答の書き出し | プロンプトの読み込み |
 | --- | ---: | ---: |
-| **3.0BIT** | 57-59 tokens/s | 784-785 tokens/s |
-| **UD-IQ2_XXS** | 40-44 tokens/s | 1,020 tokens/s |
-| **REAP50-Q3_K_M** | 56-62 tokens/s | 1,250 tokens/s |
+| **3.0BIT** | 59-66 tokens/s | 820 tokens/s |
+| **UD-IQ2_XXS** | 47-50 tokens/s | 1,040-1,050 tokens/s |
+| **REAP50-Q3_K_M** | 59-66 tokens/s | 1,300-1,310 tokens/s |
 
 </td></tr>
 </table>
@@ -104,23 +105,23 @@ PolyStrata が 2 台の PC で、短いチャットと 3 万〜3.2 万トーク�
 
 | サイズ | 回答の書き出し | プロンプトの読み込み |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 71 tokens/s | 1,390 tokens/s |
-| **UD-Q2_K_XL** | 91 tokens/s | 1,320 tokens/s |
-| **UD-Q4_K_M** | 58-61 tokens/s | 1,100-1,350 tokens/s |
+| **UD-Q3_K_M** | 84-87 tokens/s | 1,500-1,620 tokens/s |
+| **UD-Q2_K_XL** | 110-111 tokens/s | 1,500-1,510 tokens/s |
+| **UD-Q4_K_M** | 79-86 tokens/s | 1,560-1,570 tokens/s |
 
 </td><td>
 
 | サイズ | 回答の書き出し | プロンプトの読み込み |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 332-334 tokens/s | 5,520-5,580 tokens/s |
-| **UD-Q2_K_XL** | 368-369 tokens/s | 5,540-5,580 tokens/s |
-| **UD-Q4_K_M** | 333-337 tokens/s | 5,630-5,660 tokens/s |
+| **UD-Q3_K_M** | 385-393 tokens/s | 6,350-6,550 tokens/s |
+| **UD-Q2_K_XL** | 410-438 tokens/s | 5,970-6,440 tokens/s |
+| **UD-Q4_K_M** | 328-393 tokens/s | 6,230-6,580 tokens/s |
 
 </td></tr>
 </table>
 
-プロンプトが短いほど速く読めます。10,000 トークンのプロンプトは、ノート PC で毎秒 1,450 トークン、
-ワークステーションで毎秒 5,500 トークンです。ワークステーションのカードにモデル全体を載せた llama.cpp は、
+10,000 トークンのプロンプトは、ノート PC で毎秒 1,620 トークン、
+ワークステーションで毎秒 6,100 トークンで読みます。ワークステーションのカードにモデル全体を載せた llama.cpp は、
 毎秒約 180 トークンで書き、プロンプトを毎秒 6,000〜9,000 トークンで読みました。llama.cpp にはモデルが収まるカードが必要です。
 ワークステーションのカードを 8 GB に制限した数字は、ノート PC を測る前の代わりの値で、
 [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram)（英語）にあります。
@@ -135,22 +136,22 @@ PolyStrata が 2 台の PC で、短いチャットと 3 万〜3.2 万トーク�
 
 | サイズ | 回答の書き出し | プロンプトの読み込み |
 | --- | ---: | ---: |
-| **APEX-I-COMPACT** | 70 tokens/s | 1,340 tokens/s |
-| **APEX-I-MINI** | 63-68 tokens/s | 1,300-1,310 tokens/s |
-| **APEX-I-QUALITY** | 42-48 tokens/s | 1,290-1,320 tokens/s |
+| **APEX-I-COMPACT** | 72-76 tokens/s | 1,540 tokens/s |
+| **APEX-I-MINI** | 77-79 tokens/s | 1,470 tokens/s |
+| **APEX-I-QUALITY** | 59-63 tokens/s | 940-1,510 tokens/s |
 
 </td><td>
 
 | サイズ | 回答の書き出し | プロンプトの読み込み |
 | --- | ---: | ---: |
-| **APEX-I-COMPACT** | 267-272 tokens/s | 5,700-5,890 tokens/s |
-| **APEX-I-MINI** | 265-279 tokens/s | 5,450-5,510 tokens/s |
-| **APEX-I-QUALITY** | 263-265 tokens/s | 5,600-5,610 tokens/s |
+| **APEX-I-COMPACT** | 303-315 tokens/s | 6,080-6,360 tokens/s |
+| **APEX-I-MINI** | 289-300 tokens/s | 5,940-6,170 tokens/s |
+| **APEX-I-QUALITY** | 289-298 tokens/s | 6,040-6,390 tokens/s |
 
 </td></tr>
 </table>
 
-10,000 トークンのプロンプトは、ノート PC で毎秒 1,380 トークン、ワークステーションで毎秒 5,500 トークンで読みます。
+10,000 トークンのプロンプトは、ノート PC で毎秒 1,530 トークン、ワークステーションで毎秒 5,600 トークンで読みます。
 ワークステーションのカードにモデル全体を載せた llama.cpp は、毎秒約 180 トークンで書き、
 プロンプトを毎秒 6,000〜9,000 トークンで読みました。
 
@@ -164,28 +165,30 @@ PolyStrata が 2 台の PC で、短いチャットと 3 万〜3.2 万トーク�
 
 | サイズ | 回答の書き出し | プロンプトの読み込み |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 70-71 tokens/s | 1,910 tokens/s |
-| **UD-Q2_K_XL** | 86-87 tokens/s | 1,840 tokens/s |
-| **UD-Q4_K_M** | 67 tokens/s | 1,840 tokens/s |
+| **UD-Q3_K_M** | 85 tokens/s | 2,100 tokens/s |
+| **UD-Q2_K_XL** | 94-95 tokens/s | 1,920-2,000 tokens/s |
+| **UD-Q4_K_M** | 74-75 tokens/s | 2,010 tokens/s |
 
 </td><td>
 
 | サイズ | 回答の書き出し | プロンプトの読み込み |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 306 tokens/s | 7,170-7,210 tokens/s |
-| **UD-Q2_K_XL** | 315 tokens/s | 6,920 tokens/s |
-| **UD-Q4_K_M** | 301 tokens/s | 7,120-7,210 tokens/s |
+| **UD-Q3_K_M** | 326-349 tokens/s | 7,880-8,230 tokens/s |
+| **UD-Q2_K_XL** | 316-331 tokens/s | 7,120-7,860 tokens/s |
+| **UD-Q4_K_M** | 316-338 tokens/s | 7,040-8,050 tokens/s |
 
 </td></tr>
 </table>
 
-10,000 トークンのプロンプトは、ノート PC で毎秒 1,950 トークン、ワークステーションで毎秒 5,500 トークンで読みます。
+10,000 トークンのプロンプトは、ノート PC で毎秒 2,080 トークン、ワークステーションで毎秒 6,800 トークンで読みます。
 ワークステーションのカードにモデル全体を載せた llama.cpp は、毎秒約 165 トークンで書き、
 プロンプトを毎秒 6,000〜9,000 トークンで読みました。
 
 PolyStrata 独自のエンジンで動く 4 つのモデルは、付属のベンチマークで測りました。あなたの PC でも実行できます：
 `python polystrata.py benchmark --model <name> --prompt-tokens 24000`
 （[何を送り、何を表示するか](docs/BACKENDS.md#benchmark)、英語）。
+ほかの人が自分のカードで測った結果と、あなたの PC で llama.cpp と比べる方法：
+[コミュニティの測定結果](docs/COMMUNITY_BENCHMARKS.md#the-models-polystrata-adds)（英語）。
 
 ## 必要なもの
 
@@ -426,7 +429,7 @@ GLM 5.3 Flash のほかの量子化にはまだ対応していません：[足�
 | **画像** | セットアップで「Images?」に yes と答えます。そのあとチャットで **Picture** をクリックするか、アプリで画像を添付します。AMD のカードは、Linux ではプロセッサーを使って画像を読みます。Windows ではまだ読めません。 | まだ読めません。 | セットアップで「Images?」に yes と答えます。あとは Qwen3.8-Flash-Next と同じです。16 GB 未満のカードでは画像エンコーダーがプロセッサーで動き、画像 1 枚に数秒かかります。 |
 | **リクエストは 1 つずつ** | 初期設定では PolyStrata は 1 つのリクエストに答え、ほかは待ちます。複数に同時に答えるには`"parallel": 2` を設定します（[BATCHING.md](docs/BATCHING.md)）。12 GB のカードでは、それぞれの回答が遅くなります。 | 1 つずつ答え、ほかは待ちます。 | 1 つずつ答え、ほかは待ちます。 |
 | **複数の会話** | 直前の会話は保持されるので、2 通目以降は数秒で始まります。エンジンの引数を 2 つ足すと、複数の会話を RAM に保持できます（[詳細](docs/DETAILS.md#using-it)）。 | 直前の会話は保持されます。セットアップで、複数の会話を RAM に保持するかどうかを尋ねます。保持すると、エージェントとサブエージェントが交互に使っても、プロンプトを読み直しません（[仕組み](docs/GLM.md#several-conversations-at-once)）。 | GLM 5.3 Flash と同じです。 |
-| **長いプロンプト** | PolyStrata はチャットの最初のメッセージをすべて読みます。30,000 トークンあたり約 1 分かかります。2 通目以降のメッセージは数秒で始まります。 | 最初のメッセージはすべて読みます。30,000 トークンあたり約 40 秒かかります。 | 最初のメッセージは全部読みます。30,000 トークンで、ワークステーションは 6〜8 秒、8 GB のノート PC は 16〜22 秒です。 |
+| **長いプロンプト** | PolyStrata はチャットの最初のメッセージをすべて読みます。30,000 トークンあたり約 1 分かかります。2 通目以降のメッセージは数秒で始まります。 | 最初のメッセージはすべて読みます。30,000 トークンあたり約 40 秒かかります。 | 最初のメッセージは全部読みます。30,000 トークンで、ワークステーションは 4〜5 秒、8 GB のノート PC は 14〜20 秒です。 |
 
 詳しくは：[チャットの保存場所](docs/INSTALL.md#where-things-are-stored)、[API](docs/DETAILS.md#using-it)。
 

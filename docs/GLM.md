@@ -34,10 +34,11 @@ same way without the draft block, wrote 26.7 to 27.7 tokens/s and read the three
 [BACKENDS.md](BACKENDS.md#what-was-tuned) has what changed since. llama.cpp was not run again.
 
 The README's row for 3.0BIT is PolyStrata's own benchmark through the server, the test every model of this engine
-gets ([BACKENDS.md](BACKENDS.md#a-prompt-of-30000-tokens)): a short chat written at 57 to 59 tokens/s, and a prompt
-of 28,354 tokens read whole at 784 to 785, with the first token after 36 s and the answer after it written at 49
-to 51. Of the 29,069-token prompt in the table above only the last 18,829 tokens are read, the ones furthest
-into the context, which is the likely reason it comes out slower.
+gets ([BACKENDS.md](BACKENDS.md#a-prompt-of-30000-tokens)), with the engine of the ready-made release: a short chat
+written at 59 to 66 tokens/s, and a prompt of 29,154 tokens read whole at 820 to 824, with the first token after
+36 s and the answer after it written at 62 to 64. The build before read a prompt of 28,354 tokens there at 784 to
+785. Of the 29,069-token prompt in the table above only the last 18,829 tokens are read, the ones furthest into
+the context, which is the likely reason it comes out slower.
 
 With greedy sampling the two write the same tokens until two candidates are nearly tied. The model's activations
 are quantized to 8 bits between layers, so a difference in rounding between two correct implementations can decide

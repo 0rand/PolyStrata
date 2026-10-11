@@ -448,8 +448,33 @@ cause was not found.
 
 ### A prompt of 30,000 tokens
 
-The README's numbers are this benchmark with one long prompt, `--prompt-tokens 24000`, which comes to 28,000 to
-31,000 tokens by the models' tokenizers, twice each. The three new models ran as setup installed them, and held to
+The README's numbers are this benchmark with one long prompt, `--prompt-tokens 24000`, which came to 29,154 to
+31,352 tokens by the models' tokenizers, with the engine of the ready-made release (f48fe541a646), three runs a
+size, set up as for the second table below. Qwen3.6 UD-Q3_K_M and Gemma 4 UD-Q3_K_M have the better of two such
+passes 16 and 22 minutes apart. In the other they wrote the short chat at 370 to 380 and 321 to 339 tokens/s and read
+the prompt at 5,934 to 6,109 and 7,236 to 8,135.
+
+| Model | Card | Prompt, tokens | First token, s | Reads, tokens/s | Writes a short chat | Writes after the prompt | Experts from VRAM |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen3.6-35B-A3B UD-Q3_K_M | whole model on it | 31,352 | 4.9 to 5.0 | 6,350 to 6,552 | 385 to 393 | 241 to 246 | 100% |
+| Qwen3.6-35B-A3B UD-Q2_K_XL | whole model on it | 31,352 | 4.9 to 5.3 | 5,969 to 6,439 | 410 to 438 | 258 to 261 | 100% |
+| Qwen3.6-35B-A3B UD-Q4_K_M | whole model on it | 31,352 | 4.8 to 5.1 | 6,231 to 6,577 | 328 to 393 | 243 to 255 | 100% |
+| Ornith 1.5 APEX-I-Compact | whole model on it | 31,352 | 5.0 to 5.2 | 6,083 to 6,360 | 303 to 315 | 218 to 226 | 100% |
+| Ornith 1.5 APEX-I-Mini | whole model on it | 31,352 | 5.2 to 5.4 | 5,939 to 6,171 | 289 to 300 | 204 to 210 | 100% |
+| Ornith 1.5 APEX-I-Quality | whole model on it | 31,352 | 5.0 to 5.3 | 6,040 to 6,392 | 289 to 298 | 203 to 204 | 100% |
+| Gemma 4 26B-A4B UD-Q3_K_M | whole model on it | 31,217 | 3.8 to 4.0 | 7,880 to 8,230 | 326 to 349 | 254 to 261 | 100% |
+| Gemma 4 26B-A4B UD-Q2_K_XL | whole model on it | 31,217 | 4.0 to 4.5 | 7,117 to 7,858 | 316 to 331 | 237 to 245 | 100% |
+| Gemma 4 26B-A4B UD-Q4_K_M | whole model on it | 31,217 | 3.9 to 4.5 | 7,039 to 8,055 | 316 to 338 | 232 to 238 | 100% |
+| GLM 5.3 Flash 3.0bit | 32 GB | 29,154 | 35.5 to 35.6 | 820 to 824 | 59 to 66 | 62 to 64 | 50% to 51% |
+| GLM 5.3 Flash UD-IQ2_XXS | 32 GB | 29,154 | 27.7 to 28.1 | 1,038 to 1,053 | 47 to 50 | 41 to 43 | 51% to 52% |
+| GLM 5.3 Flash REAP50-Q3_K_M | 32 GB | 29,154 | 22.4 to 22.6 | 1,295 to 1,306 | 59 to 66 | 61 to 66 | 57% to 59% |
+
+The same engine read the benchmark's prompt without `--prompt-tokens`, 10,615 tokens (10,995 for Gemma 4), at
+6,069 to 6,265 tokens/s with Qwen3.6 UD-Q3_K_M, 5,540 to 5,692 with Ornith's APEX-I-Compact and 5,466 to 6,792
+with Gemma 4 UD-Q3_K_M, three runs each.
+
+The second table is the same benchmark with the builds before, which came to 28,000 to 31,000 tokens, twice
+each. The three new models ran as setup installed them, and held to
 8 GB as above but through the server, with the picture encoder on the CPU, where setup puts it for a card under
 16 GB, and a profile of the run's own that a first run had started. GLM's three sizes ran from hand-written
 configs: 24 threads, the profile the repository ships for the size after a first run's counts, and for 3.0bit
@@ -517,16 +542,54 @@ the prompt at 2,023, with the build before a prompt batch's attention took its r
 
 The kind of PC the three new models are for: an RTX 4070 Laptop with 8 GB, an i7-14700HX (8 performance cores
 of two threads each and 12 efficiency cores, AVX2 and no AVX-512), 32 GB of RAM, Windows 10, driver 610.74,
-CUDA 13.0, the engine compiled with Visual Studio's 2022 compiler. Setup installed the nine sizes of the three
-models: a context of 32,768, the picture encoder on the CPU, and 13 threads for the experts that are not in
-VRAM. The numbers are the benchmark's through the server, as on the first machine, with a browser and the
-desktop on the same card and in the same RAM. They are one pass over the nine sizes with one build of the
-engine, the one with every change in [What was tuned](#what-was-tuned) and the merge of the Strata project's
-0.1.41.
+CUDA 13.0. Setup installed the nine sizes of the three models: a context of 32,768, the picture encoder on the
+CPU, and 13 threads for the experts that are not in VRAM. The numbers are the benchmark's through the server, as
+on the first machine, with a browser and the desktop on the same card and in the same RAM.
 
-The README's test, `--prompt-tokens 24000`, three runs a size. A size's first run is the first after another
-model was in memory, and it starts without a profile of the experts' use. The table has the two runs after it.
-The card's memory was at 7.4 to 7.5 GiB of its 8 in every one of them.
+The README's numbers are the README's test, `--prompt-tokens 24000`, with the release's ready-made engine: the
+source of f48fe541a646, built on this laptop by `tools/make_poly_release.py` and installed by setup, with CUDA's
+libraries from pip. Three runs a size. A size's first run is the first after another model was in memory, and
+the table has the two runs after it. The card's memory was at 7.3 GiB of its 8 in every one of them.
+
+| Model | Prompt, tokens | First token, s | Reads, tokens/s | Writes a short chat | Writes after the prompt | Experts from VRAM | Machine's RAM, GiB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Gemma 4 26B-A4B UD-Q3_K_M | 31,091 | 14.9 | 2,095 to 2,098 | 85 | 58 to 60 | 51% | 22.8 |
+| UD-Q2_K_XL | 31,091 | 15.6 to 16.3 | 1,917 to 1,998 | 94 to 95 | 69 to 70 | 69% to 70% | 20.7 |
+| UD-Q4_K_M | 31,091 | 15.5 | 2,010 to 2,011 | 74 to 75 | 59 | 35% to 36% | 26.8 |
+| Qwen3.6-35B-A3B UD-Q3_K_M | 31,285 | 19.3 to 21.0 | 1,495 to 1,620 | 84 to 87 | 70 to 73 | 51% to 53% | 24.7 |
+| UD-Q2_K_XL | 31,285 | 20.8 | 1,503 to 1,505 | 110 to 111 | 88 | 71% | 20.6 |
+| UD-Q4_K_M | 31,285 | 20.0 | 1,564 to 1,572 | 79 to 86 | 70 to 72 | 43% to 44% | 29.7 |
+| Ornith 1.5 APEX-I-Compact | 31,285 | 20.4 | 1,538 to 1,539 | 72 to 76 | 66 to 68 | 55% to 58% | 25.2 |
+| APEX-I-Mini | 31,285 | 21.2 to 21.3 | 1,474 | 77 to 79 | 72 to 73 | 69% to 72% | 22.4 |
+| APEX-I-Quality | 31,285 | 20.8 and 33.4 | 937 and 1,510 | 59 to 63 | 58 to 59 | 41% to 43% | 30.7 to 30.8 |
+
+APEX-I-Quality's second run read the prompt at 937 tokens/s with the machine's RAM at 30.8 GiB: part of its
+23.7 GB file came from the disk again, as for Qwen3.6 UD-Q4_K_M in the pass below.
+
+A size's first run wrote the short chat at 25 to 67 tokens/s and after the prompt at 53 to 84, and read the
+prompt as fast as the two runs after it. Runs that start with the model's file pushed out of Windows' file cache
+are as slow, with the engine before the release as well: three runs of each in turns with Qwen3.6 UD-Q3_K_M,
+each after reading APEX-I-Quality's 23.7 GB file, the engine of 27f9ec9dd4d0 wrote the short chat at 29 to 35
+tokens/s, read the prompt at 1,287 to 1,334 and wrote after it at 54 to 58, and the release's engine at 34 to
+37, 1,573 to 1,632 and 66 to 68.
+
+The release's engine is built for every card from RTX 20 to RTX 50 and for any processor with AVX2. Against the
+same source compiled here for this card and this processor alone, three runs of each in turns with the first
+size of each model, the medians were: Qwen3.6 wrote the short chat at 90.7 tokens/s and 91.4 compiled here, read
+the prompt at 1,623 and 1,610 and wrote after it at 71.2 and 71.5; Gemma 4 at 83.0 and 83.0, 2,104 and 2,116,
+61.9 and 58.4; Ornith at 80.6 and 79.5, 1,550 and 1,547, 68.2 and 67.6. In these runs a request that was not
+counted came first after each start, and the short chat was written faster than in the table.
+
+The benchmark without `--prompt-tokens`, the second of two runs: the release's engine read 10,563 tokens at
+1,619 tokens/s with Qwen3.6 UD-Q3_K_M and 1,532 with Ornith's APEX-I-Compact, and 10,949 at 2,079 with Gemma 4
+UD-Q3_K_M.
+
+The tables after these are one pass over the nine sizes with the build before, compiled here with Visual
+Studio's 2022 compiler: the one with every change in [What was tuned](#what-was-tuned) and the merge of the
+Strata project's 0.1.41. The release's engine has the changes of 2026-10-10 after it, 68c0374dc13e to
+f48fe541a646, which What was tuned does not list. The same test, three runs a size; there a size's first run
+started without a profile of the experts' use. The table has the two runs after it. The card's memory was at
+7.4 to 7.5 GiB of its 8 in every one of them.
 
 | Model | Prompt, tokens | First token, s | Reads, tokens/s | Writes a short chat | Writes after the prompt | Experts from VRAM | Machine's RAM, GiB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -662,10 +725,13 @@ Not run on this laptop: GLM 5.3 Flash, for which it has not the RAM.
 Setup asks for the context. The engine keeps the keys and values of the context in fp16 on the card, about 20 KB a
 token for each of the three models (ten layers of full attention with two key and value heads of 256 in Qwen3.6
 and Ornith; Gemma 4's five global layers, plus about 0.2 GB for its sliding layers of 1,024 tokens). So every 32K
-of context takes about 0.7 GB from the cache of experts on an 8 GB card.
+tokens of a conversation take about 0.7 GB from the cache of experts on an 8 GB card. The release's engine takes
+that VRAM as the conversation grows, not at load: with a context of 32K it starts with 3.2 GiB of Qwen3.6's experts
+on the laptop's card, 3.8 GiB of Ornith's and 2.3 GiB of Gemma 4's. The table below is from the engine before,
+which took the whole context at load.
 
-Measured on the laptop on 2026-10-10 with the build of main: `polystrata.py benchmark --prompt-tokens N` with
-`--max-context` set in the model's config, one run each, with a prompt of about nine tenths of the context.
+Measured on the laptop on 2026-10-10 with the engine of 27f9ec9dd4d0: `polystrata.py benchmark --prompt-tokens N`
+with `--max-context` set in the model's config, one run each, with a prompt of about nine tenths of the context.
 
 | Model | Context | Experts in VRAM at the start | Prompt, tokens | Reads, tokens/s | Writes after the prompt |
 | --- | --- | --- | ---: | ---: | ---: |

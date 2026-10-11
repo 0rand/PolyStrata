@@ -5,7 +5,7 @@
 <p align="center"><b>Ejecuta modelos de IA grandes en tu propio PC</b><br>
 Qwen3.8-Flash-Next, GLM 5.3 Flash, Qwen3.6, Ornith 1.5 y Gemma 4 · libre y de código abierto</p>
 
-<p align="center"><img src="docs/media/speed.svg" width="820" alt="Tokens por segundo al escribir una respuesta: 71 con Qwen3.6-35B-A3B en un portátil con tarjeta de 8 GB, 332 a 334 en una RTX 5090"></p>
+<p align="center"><img src="docs/media/speed.svg" width="820" alt="Tokens por segundo al escribir una respuesta: 84 a 87 con Qwen3.6-35B-A3B en un portátil con tarjeta de 8 GB, 385 a 393 en una RTX 5090"></p>
 
 <p align="center"><a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4"><img src="docs/media/pagoda-preview.webp" width="720" alt="Un jardín con una pagoda de vóxeles que escribió el modelo de PolyStrata, funcionando en el navegador"></a><br>
 <sub>Un jardín con una pagoda de vóxeles, hecho con un solo prompt en una RTX 5070 con <a href="https://github.com/Niko1221/Strata">Strata</a> (Qwen3.8-Flash-Next IQ3_S, contexto de 128K) ·
@@ -34,6 +34,7 @@ El servidor puede cambiar entre los modelos instalados mientras está en marcha
 ([cómo](docs/BACKENDS.md#changing-the-model), en inglés).
 
 PolyStrata está hecho sobre [Strata](https://github.com/Niko1221/Strata) de Niko1221.
+Por qué es un repositorio aparte, las tarjetas AMD y más pequeñas, los fine-tunes y otras preguntas: [FAQ](docs/FAQ.md) (en inglés).
 
 ## ¿Qué velocidad tiene?
 
@@ -76,7 +77,7 @@ RTX 3090 (24 GB) debería escribir unos 100-140 tokens por segundo. Chats largos
 
 ### GLM 5.3 Flash
 
-Medido para PolyStrata en una estación de trabajo, con un chat corto y un prompt de 28K tokens.
+Medido para PolyStrata en una estación de trabajo, con un chat corto y un prompt de 29K tokens.
 
 <table>
 <tr><th>NVIDIA: RTX 5090 (32 GB), Xeon Platinum 8470Q (25 vCPU), 120 GB de RAM</th></tr>
@@ -84,9 +85,9 @@ Medido para PolyStrata en una estación de trabajo, con un chat corto y un promp
 
 | Tamaño | Escribe respuestas | Lee tu prompt |
 | --- | ---: | ---: |
-| **3.0BIT** | 57-59 tokens/s | 784-785 tokens/s |
-| **UD-IQ2_XXS** | 40-44 tokens/s | 1,020 tokens/s |
-| **REAP50-Q3_K_M** | 56-62 tokens/s | 1,250 tokens/s |
+| **3.0BIT** | 59-66 tokens/s | 820 tokens/s |
+| **UD-IQ2_XXS** | 47-50 tokens/s | 1,040-1,050 tokens/s |
+| **REAP50-Q3_K_M** | 59-66 tokens/s | 1,300-1,310 tokens/s |
 
 </td></tr>
 </table>
@@ -107,23 +108,23 @@ estación de trabajo cuya tarjeta tiene el modelo entero.
 
 | Tamaño | Escribe respuestas | Lee tu prompt |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 71 tokens/s | 1,390 tokens/s |
-| **UD-Q2_K_XL** | 91 tokens/s | 1,320 tokens/s |
-| **UD-Q4_K_M** | 58-61 tokens/s | 1,100-1,350 tokens/s |
+| **UD-Q3_K_M** | 84-87 tokens/s | 1,500-1,620 tokens/s |
+| **UD-Q2_K_XL** | 110-111 tokens/s | 1,500-1,510 tokens/s |
+| **UD-Q4_K_M** | 79-86 tokens/s | 1,560-1,570 tokens/s |
 
 </td><td>
 
 | Tamaño | Escribe respuestas | Lee tu prompt |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 332-334 tokens/s | 5,520-5,580 tokens/s |
-| **UD-Q2_K_XL** | 368-369 tokens/s | 5,540-5,580 tokens/s |
-| **UD-Q4_K_M** | 333-337 tokens/s | 5,630-5,660 tokens/s |
+| **UD-Q3_K_M** | 385-393 tokens/s | 6,350-6,550 tokens/s |
+| **UD-Q2_K_XL** | 410-438 tokens/s | 5,970-6,440 tokens/s |
+| **UD-Q4_K_M** | 328-393 tokens/s | 6,230-6,580 tokens/s |
 
 </td></tr>
 </table>
 
-Un prompt más corto se lee más rápido: uno de 10,000 tokens a 1,450 tokens/s en el portátil y a 5,500 en la estación
-de trabajo. llama.cpp con el modelo entero en la tarjeta de la estación de trabajo escribió unos 180 tokens/s y leyó
+Un prompt de 10,000 tokens se lee a 1,620 tokens/s en el portátil y a 6,100 en la estación de trabajo.
+llama.cpp con el modelo entero en la tarjeta de la estación de trabajo escribió unos 180 tokens/s y leyó
 los prompts a entre 6,000 y 9,000. Necesita una tarjeta en la que quepa el modelo. Las cifras de la tarjeta de la
 estación limitada a 8 GB, un sustituto de antes de medir en el portátil, están en
 [docs/BACKENDS.md](docs/BACKENDS.md#with-8-gb-of-vram) (en inglés).
@@ -138,22 +139,22 @@ Medido de la misma manera, en los mismos dos PC.
 
 | Tamaño | Escribe respuestas | Lee tu prompt |
 | --- | ---: | ---: |
-| **APEX-I-COMPACT** | 70 tokens/s | 1,340 tokens/s |
-| **APEX-I-MINI** | 63-68 tokens/s | 1,300-1,310 tokens/s |
-| **APEX-I-QUALITY** | 42-48 tokens/s | 1,290-1,320 tokens/s |
+| **APEX-I-COMPACT** | 72-76 tokens/s | 1,540 tokens/s |
+| **APEX-I-MINI** | 77-79 tokens/s | 1,470 tokens/s |
+| **APEX-I-QUALITY** | 59-63 tokens/s | 940-1,510 tokens/s |
 
 </td><td>
 
 | Tamaño | Escribe respuestas | Lee tu prompt |
 | --- | ---: | ---: |
-| **APEX-I-COMPACT** | 267-272 tokens/s | 5,700-5,890 tokens/s |
-| **APEX-I-MINI** | 265-279 tokens/s | 5,450-5,510 tokens/s |
-| **APEX-I-QUALITY** | 263-265 tokens/s | 5,600-5,610 tokens/s |
+| **APEX-I-COMPACT** | 303-315 tokens/s | 6,080-6,360 tokens/s |
+| **APEX-I-MINI** | 289-300 tokens/s | 5,940-6,170 tokens/s |
+| **APEX-I-QUALITY** | 289-298 tokens/s | 6,040-6,390 tokens/s |
 
 </td></tr>
 </table>
 
-Un prompt de 10,000 tokens se lee a 1,380 tokens/s en el portátil y a 5,500 en la estación de trabajo. llama.cpp con
+Un prompt de 10,000 tokens se lee a 1,530 tokens/s en el portátil y a 5,600 en la estación de trabajo. llama.cpp con
 el modelo entero en la tarjeta de la estación de trabajo escribió unos 180 tokens/s y leyó los prompts a entre 6,000 y
 9,000.
 
@@ -167,28 +168,30 @@ Medido de la misma manera, en los mismos dos PC.
 
 | Tamaño | Escribe respuestas | Lee tu prompt |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 70-71 tokens/s | 1,910 tokens/s |
-| **UD-Q2_K_XL** | 86-87 tokens/s | 1,840 tokens/s |
-| **UD-Q4_K_M** | 67 tokens/s | 1,840 tokens/s |
+| **UD-Q3_K_M** | 85 tokens/s | 2,100 tokens/s |
+| **UD-Q2_K_XL** | 94-95 tokens/s | 1,920-2,000 tokens/s |
+| **UD-Q4_K_M** | 74-75 tokens/s | 2,010 tokens/s |
 
 </td><td>
 
 | Tamaño | Escribe respuestas | Lee tu prompt |
 | --- | ---: | ---: |
-| **UD-Q3_K_M** | 306 tokens/s | 7,170-7,210 tokens/s |
-| **UD-Q2_K_XL** | 315 tokens/s | 6,920 tokens/s |
-| **UD-Q4_K_M** | 301 tokens/s | 7,120-7,210 tokens/s |
+| **UD-Q3_K_M** | 326-349 tokens/s | 7,880-8,230 tokens/s |
+| **UD-Q2_K_XL** | 316-331 tokens/s | 7,120-7,860 tokens/s |
+| **UD-Q4_K_M** | 316-338 tokens/s | 7,040-8,050 tokens/s |
 
 </td></tr>
 </table>
 
-Un prompt de 10,000 tokens se lee a 1,950 tokens/s en el portátil y a 5,500 en la estación de trabajo. llama.cpp con
+Un prompt de 10,000 tokens se lee a 2,080 tokens/s en el portátil y a 6,800 en la estación de trabajo. llama.cpp con
 el modelo entero en la tarjeta de la estación de trabajo escribió unos 165 tokens/s y leyó los prompts a entre 6,000 y
 9,000.
 
 Los cuatro modelos del motor propio de PolyStrata se midieron con su benchmark, que puedes ejecutar en tu PC:
 `python polystrata.py benchmark --model <name> --prompt-tokens 24000`
 ([qué envía y qué imprime](docs/BACKENDS.md#benchmark), en inglés).
+Lo que otros midieron en sus propias tarjetas, y cómo comparar con llama.cpp en la tuya:
+[resultados de la comunidad](docs/COMMUNITY_BENCHMARKS.md#the-models-polystrata-adds) (en inglés).
 
 ## Qué necesitas
 
@@ -433,7 +436,7 @@ En qué se diferencian:
 | **Imágenes** | Responde que sí a "Images?" en la instalación. Luego haz clic en **Picture** en el chat, o adjunta imágenes en tu aplicación. Las tarjetas AMD leen imágenes en Linux a través del procesador; en Windows todavía no. | Todavía no. | Responde que sí a "Images?" en la instalación, y luego como con Qwen3.8-Flash-Next. En una tarjeta de menos de 16 GB el codificador de imágenes funciona en el procesador, y una imagen tarda unos segundos. |
 | **Una petición cada vez** | Por defecto PolyStrata responde una petición y las demás esperan. Para responder varias a la vez, pon `"parallel": 2` ([BATCHING.md](docs/BATCHING.md)). En una tarjeta de 12 GB, cada respuesta va más lenta. | Una cada vez, las demás esperan. | Una cada vez, las demás esperan. |
 | **Varias conversaciones** | La última se conserva, así que los mensajes siguientes empiezan en segundos. Dos argumentos del motor guardan varias en RAM ([detalles](docs/DETAILS.md#using-it)). | La última se conserva. La instalación pregunta si guardar varias en RAM, para que un agente y sus subagentes se turnen sin que se vuelvan a leer sus prompts ([cómo](docs/GLM.md#several-conversations-at-once)). | Como GLM 5.3 Flash. |
-| **Prompts largos** | PolyStrata lee entero el primer mensaje de un chat, más o menos 1 minuto por cada 30,000 tokens. Los mensajes siguientes empiezan en segundos. | El primer mensaje se lee entero, más o menos 40 segundos por cada 30,000 tokens. | El primer mensaje se lee entero: 30,000 tokens tardan de 6 a 8 segundos en la estación de trabajo y de 16 a 22 segundos en el portátil de 8 GB. |
+| **Prompts largos** | PolyStrata lee entero el primer mensaje de un chat, más o menos 1 minuto por cada 30,000 tokens. Los mensajes siguientes empiezan en segundos. | El primer mensaje se lee entero, más o menos 40 segundos por cada 30,000 tokens. | El primer mensaje se lee entero: 30,000 tokens tardan de 4 a 5 segundos en la estación de trabajo y de 14 a 20 segundos en el portátil de 8 GB. |
 
 Más: [dónde se guardan tus chats](docs/INSTALL.md#where-things-are-stored), [la API](docs/DETAILS.md#using-it).
 
