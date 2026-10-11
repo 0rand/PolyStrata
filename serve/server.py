@@ -139,6 +139,10 @@ EFFORT_TEXT = {"low": "Reasoning effort is set to low. Keep your thinking brief 
                         "assumptions, consider plausible alternatives, and prioritize correctness, consistency, and "
                         "clarity in the final answer."}
 VISION_START = "<|vision_start|>"
+# The tokens that open a chat turn in each call format's template.  The last one in a prompt begins the reply's
+# turn: strata-poly keeps a checkpoint there (turn_at), which the chat's next request goes on from.
+TURN_OPENERS = {"function": ("<|im_start|>",), "gemma": ("<|turn>",),
+                "glm": ("<|system|>", "<|user|>", "<|assistant|>", "<|observation|>")}
 # #606: a reply that repeats one token this many times in a row is ended there ("length"): a model in a loop, or a
 # broken state that answers one token forever (an issue saw 36,689 tokens of "!"). The config's "repeat_stop_tokens"
 # sets it; 0 turns it off.
@@ -586,6 +590,7 @@ class StrataEngine:
     gpu_busy = None                      # #1317: () -> bool, "the GPU is working" (the telemetry's reading); a GPU at work is not frozen
     last_err = None                      # #997: an ERR that was its last stdout line (death_note says it)
     batch = 0                            # --batch: the engine's batch slots (0: one request at a time)
+    turn_ids = frozenset()               # Service: the tokens that open a chat turn (turn_key()); survives restart()
 
     # `last`: the figures of the engine's last DONE line.  With batch slots several requests run at once, each on its
     # own thread, so each one reads its own request's figures (Service.run records them); one at a time, the one dict.
@@ -993,6 +998,13 @@ class StrataEngine:
         started with one (--control-vector-scaled; an engine without one ignores the key).  Absent = on."""
         on = sampling.get("experimental_speed_projection")
         return f" cvec={int(on)}" if isinstance(on, bool) else ""
+
+    def turn_key(self, ids) -> str:
+        """`turn_at=POS`: where the prompt's last turn begins (its last token of turn_ids).  strata-poly keeps a
+        checkpoint there, which the chat's next request goes on from; the Strata engine skips the key and finds the
+        place itself."""
+        at = next((i for i in range(len(ids) - 1, 0, -1) if ids[i] in self.turn_ids), None)
+        return f" turn_at={at}" if at is not None else ""
 
     def _send(self, text: str):
         btrace("send>", text[:60])
@@ -1488,8 +1500,8 @@ class StrataEngine:
         self.progress, self.progress_ms, self.reused = None, 0, 0
         self.prefill_tok_s_mean = None
         # an image request takes the same sampling keys as text (#75: it used to decode greedily whatever was asked)
-        head = f"GENI {int(max_new)}{self.sampling_keys(sampling or {})} {embeddings}" if embeddings else \
-            f"GEN {int(max_new)}{self.sampling_keys(sampling or {})}"
+        keys = self.sampling_keys(sampling or {}) + self.turn_key(ids)
+        head = f"GENI {int(max_new)}{keys} {embeddings}" if embeddings else f"GEN {int(max_new)}{keys}"
         try:
             self.proc.stdin.write(f"{head} {','.join(str(int(t)) for t in ids)}\n")
             self.proc.stdin.flush()
@@ -2688,6 +2700,9 @@ class Service:
         # how the model writes a tool call (serve/frontend.py's OutputParser)
         pre = getattr(tokenizer, "pre", "")
         self.call_format = "glm" if pre in ("glm4", "glm5") else "gemma" if pre == "gemma4" else "function"
+        self.turn_ids = frozenset(t[0] for t in (tokenizer.encode(s, parse_special=True)
+                                                 for s in TURN_OPENERS[self.call_format]) if len(t) == 1)
+        self.engine.turn_ids = self.turn_ids            # the GEN line's turn_at (StrataEngine.turn_key)
         self.think_open_ids = []
         if self.call_format == "gemma":
             # after its calls Gemma opens the tools' answer, which is the client's to give: the reply ends there.

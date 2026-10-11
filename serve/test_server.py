@@ -1579,6 +1579,9 @@ class SamplingKeys(unittest.TestCase):
         for absent in ({}, {"strata_checkpoint": True}, {"strata_checkpoint": 0}, {"cache_prompt": False}):
             self.assertNotIn("ckpt=0", self.keys(**absent), absent)
 
+    def test_a_clients_turn_at_is_not_sent(self):
+        self.assertFalse([k for k in self.keys(turn_at=120) if k.startswith("turn_at=")])   # StrataEngine.turn_key
+
     def test_penalty_window(self):
         self.assertIn("penalty_last_n=64", self.keys(presence_penalty=1.5))
         self.assertIn("penalty_last_n=4096", self.keys(repetition_penalty=1.1, penalty_last_n=4096))
@@ -1652,6 +1655,32 @@ class SharedPrefix(unittest.TestCase):
         ids, _, _ = self.svc.prepare(self.MSGS, None, {}, 16, req=req)
         self.assertEqual(req, {"temperature": 0})
         self.assertEqual(ids, self.svc.prepare(self.MSGS, None, {}, 16)[0])
+
+
+class LastTurn(unittest.TestCase):
+    """strata-poly keeps a checkpoint where the prompt's last turn begins (the GEN line's turn_at): the chat's next
+    request shares the prompt up to there, whatever its template writes for this reply (some drop the thinking)."""
+
+    MSGS = [{"role": "system", "content": "You are terse."}, {"role": "user", "content": "hi"}]
+
+    def setUp(self):
+        self.tok = ByteTokenizer()
+        self.engine = StrataEngine("missing-executable", [], lazy=True)
+        self.svc = Service(self.engine, self.tok, ChatTemplate(ROOT / "serve/chat_template.jinja"))
+
+    def test_the_last_turn(self):
+        self.assertEqual(self.engine.turn_ids, {256})          # <|im_start|>, from the Service
+        ids = self.svc.encode_prompt(self.MSGS, None, {})
+        at = int(self.engine.turn_key(ids).split("=")[1])
+        self.assertTrue(self.tok.decode(ids[at:]).startswith("<|im_start|>assistant\n"))
+        reply = {"role": "assistant", "content": "ok", "reasoning_content": "Say hello."}
+        nxt = self.svc.encode_prompt(self.MSGS + [reply, {"role": "user", "content": "and?"}], None, {})
+        self.assertEqual(nxt[:at + 1], ids[:at + 1])
+
+    def test_no_turn(self):
+        self.assertEqual(self.engine.turn_key(self.tok.encode("plain text")), "")
+        ids = self.svc.encode_prompt(self.MSGS, None, {})
+        self.assertEqual(StrataEngine("missing-executable", [], lazy=True).turn_key(ids), "")   # no Service's tokens
 
 
 class GpuChoice(unittest.TestCase):

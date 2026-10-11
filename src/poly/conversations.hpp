@@ -28,7 +28,8 @@ namespace strata::poly {
 
 struct CacheOptions {
     int checkpoints = 6;       ///< kept per conversation; 0: a prompt is reread unless it goes on from the last token
-    int64_t every = 2048;      ///< a checkpoint every so many prompt tokens, besides the one at a prompt's end; 0: none
+    int64_t every = 2048;      ///< a checkpoint every so many prompt tokens, besides the one at a prompt's end and
+                               ///< the one where its last turn begins (turn_at()); 0: none
     int64_t park_mib = 0;      ///< host memory for parked conversations; 0: none is parked
     int park_slots = 4;        ///< parked conversations at most
     int64_t park_min = 1024;   ///< a conversation with fewer tokens before its last checkpoint is not parked
@@ -48,6 +49,7 @@ public:
     /// Leaves the engine at the furthest point of `ids` that can be come back to, and returns that position.
     int64_t resume(const std::vector<int32_t>& ids) {
         const int64_t n = (int64_t) ids.size();
+        turn_ = -1;
         size_t best = cur_;
         int64_t at = 0, same = 0;
         for (size_t i = 0; i < slots_.size(); ++i) {
@@ -71,16 +73,25 @@ public:
         return at;
     }
 
+    /// One more checkpoint of the prompt resume() took up: where its chat's last turn begins, which the server
+    /// knows from the template.  The chat's next request renders the conversation up to there as this one does,
+    /// but this turn's header and reply not always in the same tokens (a template drops the reply's thinking), so
+    /// the checkpoint before the prompt's last token is seldom where it goes on from.  A place the read does not
+    /// pass adds none.
+    void turn_at(int64_t at) { turn_ = at; }
+
     /// Of `want` tokens from position `at`, how many to read before the next checkpoint is due.
     int64_t until_checkpoint(int64_t at, int64_t want) const {
-        return o_.checkpoints > 0 && o_.every > 0 ? std::min(want, (at / o_.every + 1) * o_.every - at) : want;
+        if (o_.checkpoints < 1) return want;
+        if (o_.every > 0) want = std::min(want, (at / o_.every + 1) * o_.every - at);
+        return turn_ > at ? std::min(want, turn_ - at) : want;
     }
 
     /// Before the engine reads the token at `at`; `last` says it is the prompt's last.  Takes a checkpoint if one is
     /// due.  One sits before the last token of every prompt, so coming back to it leaves a token to read and the
     /// logits that come with it.
     void before(int64_t at, bool last) {
-        if (o_.checkpoints < 1 || at < 1 || (!last && (o_.every < 1 || at % o_.every != 0))) return;
+        if (o_.checkpoints < 1 || at < 1 || (!last && at != turn_ && (o_.every < 1 || at % o_.every != 0))) return;
         if (const BlobPtr b = mark(at)) e_.save_state(b->p.get());
     }
 
@@ -96,14 +107,19 @@ public:
         out.clear();
         due_.clear();
         after_.clear();
-        if (o_.checkpoints < 1 || o_.every < 1) return;
+        if (o_.checkpoints < 1) return;
+        std::vector<int64_t> due;
+        if (o_.every > 0)
+            for (int64_t p = (at / o_.every + 1) * o_.every; p < at + n; p += o_.every) due.push_back(p);
+        if (turn_ > at && turn_ < at + n && (o_.every < 1 || turn_ % o_.every != 0))
+            due.insert(std::upper_bound(due.begin(), due.end(), turn_), turn_);
+        if (due.empty()) return;
         for (const Checkpoint& m : cur().marks) after_.push_back(m.pos);
-        const int64_t first = (at / o_.every + 1) * o_.every;
-        for (int64_t p = first; p < at + n; p += o_.every) {
+        for (const int64_t p : due) {
             after_.push_back(p);
             while (after_.size() > (size_t) o_.checkpoints) after_.erase(after_.begin() + (std::ptrdiff_t) drop_of(after_));
         }
-        for (int64_t p = first; p < at + n; p += o_.every) {
+        for (const int64_t p : due) {
             const bool stays = std::find(after_.begin(), after_.end(), p) != after_.end();
             due_.push_back({p, stays ? blob(e_.state_bytes()) : nullptr});
             out.emplace_back(p - at, due_.back().state ? due_.back().state->p.get() : nullptr);
@@ -388,6 +404,7 @@ private:
     size_t evictions_ = 0;
     std::vector<Checkpoint> due_;   // inside()'s checkpoints, until read() makes them the conversation's
     std::vector<int64_t> after_;    // where the conversation's checkpoints are once that read is done
+    int64_t turn_ = -1;             // turn_at()'s place in the prompt being read; -1: none
 };
 
 }  // namespace strata::poly

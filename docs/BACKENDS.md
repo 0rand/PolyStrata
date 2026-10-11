@@ -1045,6 +1045,8 @@ picture in its place, and a prompt without pictures after them.
 | A window past four tokens only from a repeat of eight | Gemma 4 there, a story of 400 tokens | 72 to 79 | 76 to 86 |
 | The engine out of Windows' power throttling | Qwen3.6 there, the answer after a 31,000-token prompt, through the server | 39 | 57 to 62 |
 | | the same after 7,709 tokens, the engine started from a shell | 48 to 50 in four runs of six | 66 to 72 |
+| A checkpoint where the prompt's last turn begins, the place sent by the server | Qwen3.6 on the laptop under Claude Code, one task: tokens read by a request after the first, on average | 1,442 over six | 399 over nine |
+| | the same: seconds reading such a request, on average | 1.9 | 1.5 |
 
 All but Gemma 4's draft model and GLM's recurrent step, indexer and selection are in the shared runtime or its
 kernels, so every architecture with that kind of layer has them. Gemma 4's row for the routing has the two

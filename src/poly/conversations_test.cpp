@@ -74,10 +74,11 @@ struct Chat {
     std::vector<std::pair<int64_t, uint8_t*>> due;
     explicit Chat(const CacheOptions& o) : kept(e, o) {}
 
-    // A request as the server makes it: the prompt, then `reply` generated tokens.  Returns where the prompt was
-    // taken up, and leaves the tokens the engine then holds in `ids`.
-    int64_t ask(std::vector<int32_t>& ids, int reply = 3) {
+    // A request as the server makes it: the prompt, where its last turn begins, then `reply` generated tokens.
+    // Returns where the prompt was taken up, and leaves the tokens the engine then holds in `ids`.
+    int64_t ask(std::vector<int32_t>& ids, int reply = 3, int64_t turn = -1) {
         const int64_t n = (int64_t) ids.size(), from = kept.resume(ids);
+        kept.turn_at(turn);
         check(from >= 0 && from < n && e.at == from, "a prompt is taken up before its last token");
         for (int64_t i = from; i < n;) {
             const bool last = i == n - 1;
@@ -92,7 +93,7 @@ struct Chat {
                 e.h ^= 0x5EEDull;
                 const int64_t back = kept.rewind();
                 check(back <= i && e.at == back && e.holds(kept.seq()), "a read given up leaves the last checkpoint");
-                return ask(ids, reply);
+                return ask(ids, reply, turn);
             }
             if (far > 0 && !last) {
                 kept.inside(i, m, due);
@@ -202,6 +203,26 @@ void shared_start() {
     check(c.kept.parked() == 2, "with both others parked");
 }
 
+// The server says where a prompt's last turn begins.  The chat's next request has the reply in other tokens than
+// the ones the prompt ended with after the turn's header (a template drops the reply's thinking): it goes on from
+// the turn, and not from a checkpoint thousands of tokens back.
+void last_turn() {
+    const std::vector<int32_t> sys = text(1, 5000), head = text(2, 3), think = text(3, 2);
+    Chat c(options(64));
+    std::vector<int32_t> a = sys + head + think;
+    check(c.ask(a, 3, 5000) == 0, "a first prompt is read from its start");
+    std::vector<int32_t> b = sys + head + text(4, 300) + head + think;
+    check(c.ask(b, 3, 5303) == 5000, "the next turn goes on from where the last one began");
+    std::vector<int32_t> d = sys + head + text(4, 300) + head + text(5, 200) + head + think;
+    check(c.ask(d, 3, 5506) == 5303, "and so does the one after it");
+
+    Chat e(options(64));
+    a = sys + head + think;
+    e.ask(a);
+    b = sys + head + text(4, 300) + head + think;
+    check(e.ask(b) == 4096, "without the place, the checkpoint before the last token is past where they differ");
+}
+
 void limits() {
     // two slots: a third conversation pushes out the one not used for longest
     Chat c(options(64, 2));
@@ -257,7 +278,8 @@ void any_order() {
                 if (what < 4) ids.resize(1 + rng() % ids.size());   // goes on from somewhere inside
                 ids = ids + text((int) rng(), (int) (rng() % 400));
             }
-            c.ask(ids, (int) (rng() % 5));
+            const int64_t turn = rng() % 2 ? (int64_t) (rng() % ids.size()) : -1;
+            c.ask(ids, (int) (rng() % 5), turn);
             chats.push_back(ids);
             check(c.kept.parked() <= (size_t) std::max(o.park_slots, 0), "no more parked than slots");
             check(c.kept.parked_bytes() <= ((size_t) o.park_mib << 20), "no more parked than the budget");
@@ -298,6 +320,7 @@ int main() {
         one_conversation();
         two_conversations();
         shared_start();
+        last_turn();
         limits();
         any_order();
     }
