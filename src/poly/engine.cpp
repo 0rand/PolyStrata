@@ -986,6 +986,7 @@ void Engine::load(const Options& o) {
         throw std::runtime_error("0 to 64 experts can be on their way into the cache at a time");
     if (opt_.window < 0 || opt_.window > 8)
         throw std::runtime_error("a window is 1 to 8 tokens, or 0 for the model's own");
+    if (opt_.tail_skip < 0) throw std::runtime_error("STRATA_ROUTE_TAIL_SKIP cannot be negative");
     if (opt_.dump || std::min(opt_.prompt_batch, opt_.max_context) == 1) opt_.window = 1;
     gg_ = std::make_unique<Shards>(opt_.model);
     if (!opt_.draft_model.empty() && opt_.draft && opt_.window != 1) dg_ = std::make_unique<Shards>(opt_.draft_model);
@@ -1388,6 +1389,7 @@ bool Engine::moe(Layer& L, int il, int n, const std::function<void()>* first) {
         };
         CpuExpert host[kCpuRows * kMaxUsed];
         Cached cached[kCpuRows * kMaxUsed];
+        int32_t host_e[kCpuRows * kMaxUsed], host_k[kCpuRows * kMaxUsed];   // a host entry's expert and its place
         int n_host = 0, n_cached = 0;
         for (int t = 0; t < m; ++t) {
             int ids[kMaxUsed];
@@ -1397,12 +1399,27 @@ bool Engine::moe(Layer& L, int il, int n, const std::function<void()>* first) {
                 const size_t e = (size_t) ids[k];
                 ++use_[(size_t) il * n_expert_ + e];
                 if (n_swap_ > 0) recent_[(size_t) il * n_expert_ + e] += 1.f;
-                if (const uint8_t* s = L.slot[e])
+                if (const uint8_t* s = L.slot[e]) {
                     cached[n_cached++] = {s, w[k], at + t};
-                else
-                    host[n_host++] = {L.exp_gate + e * L.gu_stride, L.exp_up + e * L.gu_stride,
-                                      L.exp_down + e * L.d_bytes, w[k], t};
+                    continue;
+                }
+                host_e[n_host] = (int32_t) e;
+                host_k[n_host] = k;
+                host[n_host++] = {L.exp_gate + e * L.gu_stride, L.exp_up + e * L.gu_stride,
+                                  L.exp_down + e * L.d_bytes, w[k], t};
             }
+        }
+        // Strata's STRATA_ROUTE_TAIL_SKIP: an expert outside VRAM that every token here ranks at tail_skip or later
+        // adds little to any of them, so it is not computed.  The others keep the weights the router gave them.
+        if (opt_.tail_skip > 0) {
+            int kept = 0;
+            for (int i = 0; i < n_host; ++i) {
+                bool low = true;
+                for (int j = 0; j < n_host && low; ++j) low = host_e[j] != host_e[i] || host_k[j] >= opt_.tail_skip;
+                if (low) ++stats_.tail_experts;
+                else host[kept++] = host[i];
+            }
+            n_host = kept;
         }
         stats_.gpu_experts += n_cached;
         stats_.cpu_experts += n_host;

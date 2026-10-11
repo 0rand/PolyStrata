@@ -60,6 +60,9 @@ struct Options {
                                   ///< -1: as many as the architecture's vocabulary has in order of use (guess_vocab())
     std::string draft_model;      ///< a file of the same model to take that block from, when the model's has none;
                                   ///< for an architecture that guesses with a model of its own, that model's file
+    int tail_skip = 0;            ///< a routed expert outside VRAM that every token of a call ranks this far down or
+                                  ///< further (the router's first choice is 0) is left out (STRATA_ROUTE_TAIL_SKIP);
+                                  ///< 0: none is
 };
 
 /// A thing a model's file may call by other names than the engine does: converters differ.
@@ -106,6 +109,7 @@ struct Layer {
 struct Stats {
     int64_t tokens = 0, gpu_experts = 0, cpu_experts = 0, batch_cached = 0, batch_staged = 0;
     int64_t swapped_experts = 0;   ///< experts that took a cached one's slot (follow())
+    int64_t tail_experts = 0;      ///< a token's experts left out by Options::tail_skip
     double cpu_ms = 0, route_wait_ms = 0;
 };
 

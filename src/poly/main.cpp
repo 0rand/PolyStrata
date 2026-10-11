@@ -716,12 +716,12 @@ int once(Session& ss, const std::vector<int32_t>& ids, const Pictures& pictures,
     std::fprintf(stderr,
                  "prompt %lld tokens %.1f tok/s, generated %lld tokens %.2f tok/s (%s); experts from VRAM %.1f%%, "
                  "CPU experts %.1f ms/token, router wait %.1f ms/token, %lld experts swapped into VRAM, "
-                 "%lld of %lld guessed tokens right\n",
+                 "%lld left out, %lld of %lld guessed tokens right\n",
                  (long long) r.read, r.prompt_ms > 0 ? 1000.0 * (double) r.read / r.prompt_ms : 0.0,
                  (long long) r.produced, r.decode_ms > 0 ? 1000.0 * (double) (r.produced - 1) / r.decode_ms : 0.0,
                  r.finish, 100.0 * (double) st.gpu_experts / experts, st.cpu_ms / (double) std::max<int64_t>(st.tokens, 1),
                  st.route_wait_ms / (double) std::max<int64_t>(st.tokens, 1), (long long) st.swapped_experts,
-                 (long long) r.guessed_right, (long long) r.guessed);
+                 (long long) st.tail_experts, (long long) r.guessed_right, (long long) r.guessed);
     return 0;
 }
 
@@ -778,7 +778,9 @@ void usage() {
                  "  --dump-layers          print a checksum of every layer's stages to stderr\n"
                  "  --top-probs N          with --tokens: print the N most likely ids of every step to stderr\n"
                  "  --follow ID,ID,...     with --tokens: write these tokens in place of the ones picked, for\n"
-                 "                         --top-probs of the same answer under other settings\n");
+                 "                         --top-probs of the same answer under other settings\n"
+                 "environment: STRATA_ROUTE_TAIL_SKIP=N  an expert outside VRAM that every token of a window ranks\n"
+                 "                         at place N+1 or later among its experts is left out (0 = off)\n");
 }
 
 }  // namespace
@@ -864,6 +866,8 @@ int main(int argc, char** argv) {
         usage();
         return 2;
     }
+    // read as Strata's engine reads it; a server config sets it in its "env" block
+    if (const char* v = std::getenv("STRATA_ROUTE_TAIL_SKIP")) o.tail_skip = std::atoi(v);
     const long long most = 1LL << 24;   // MiB: 16 TiB
     if (cache.o.checkpoints < 0 || cache.o.every < 0 || cache.o.park_mib < 0 || cache.o.park_mib > most ||
         cache.o.park_slots < 0 || cache.o.park_slots > 1024 || cache.o.park_min < 0 || cache.min_free_mib < 0 ||
@@ -880,6 +884,10 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "strata-poly: loaded in %.1f s; %d of %d routed experts in VRAM (%.1f GiB), %d CPU threads\n",
                      ms_since(t0) / 1000.0, engine.cached_experts(), engine.total_experts(), engine.cached_gib(),
                      engine.threads());
+        if (o.tail_skip > 0)
+            std::fprintf(stderr, "strata-poly: STRATA_ROUTE_TAIL_SKIP=%d: an expert outside VRAM that every token of a "
+                                 "window ranks at place %d or later among its experts is left out; =0 turns it off\n",
+                         o.tail_skip, o.tail_skip + 1);
         // Pages on another node than the threads are read at about two thirds of the speed.  The file cache puts a
         // page on the node of whatever read it first, so a file read back by something else lands on any.
         const bool far = engine.numa_share() > 0.0 && engine.numa_share() < 0.95;
