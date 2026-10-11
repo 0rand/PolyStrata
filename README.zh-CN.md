@@ -7,6 +7,9 @@ Qwen3.8-Flash-Next、GLM 5.3 Flash、Qwen3.6、Ornith 1.5 和 Gemma 4 · 免费�
 
 <p align="center"><img src="docs/media/speed.svg" width="820" alt="写回答时每秒的 token 数：8 GB 显存的笔记本上 Qwen3.6-35B-A3B 为 84 到 87，RTX 5090 上为 385 到 393"></p>
 
+<p align="center"><img src="docs/media/claude-code-demo.gif" width="820" alt="终端里的 Claude Code，旁边是 PolyStrata 的 API Monitor"><br>
+<sub>Claude Code 接 Qwen3.6-35B-A3B UD-Q3_K_M，在 8 GB 显卡的笔记本上，原速：给一个小程序加 <code>--json</code> 选项，写测试，跑测试。服务器启动时已经读过 Claude Code 的系统提示词（<code>"warm_start": true</code>）。</sub></p>
+
 <p align="center"><a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4"><img src="docs/media/pagoda-preview.webp" width="720" alt="模型写出的体素宝塔花园，在浏览器中运行"></a><br>
 <sub>体素宝塔花园，一次提示生成，在 RTX 5070 上用 <a href="https://github.com/Niko1221/Strata">Strata</a> 运行（Qwen3.8-Flash-Next IQ3_S，128K 上下文）·
 <a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4">完整视频（49 秒）</a></sub></p>

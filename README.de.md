@@ -7,6 +7,9 @@ Qwen3.8-Flash-Next, GLM 5.3 Flash, Qwen3.6, Ornith 1.5 und Gemma 4 · kostenlos 
 
 <p align="center"><img src="docs/media/speed.svg" width="820" alt="Tokens pro Sekunde beim Schreiben einer Antwort: 84 bis 87 mit Qwen3.6-35B-A3B auf einem Laptop mit 8-GB-Karte, 385 bis 393 auf einer RTX 5090"></p>
 
+<p align="center"><img src="docs/media/claude-code-demo.gif" width="820" alt="Claude Code im Terminal neben dem API Monitor von PolyStrata"><br>
+<sub>Claude Code mit Qwen3.6-35B-A3B UD-Q3_K_M auf dem Laptop mit der 8-GB-Karte, in Echtzeit: Es fügt einem kleinen Programm die Option <code>--json</code> hinzu, schreibt einen Test dafür und führt die Tests aus. Der Server hatte den Systemprompt von Claude Code beim Start gelesen (<code>"warm_start": true</code>).</sub></p>
+
 <p align="center"><a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4"><img src="docs/media/pagoda-preview.webp" width="720" alt="Ein Voxel-Pagodengarten, den das Modell in PolyStrata geschrieben hat, läuft im Browser"></a><br>
 <sub>Ein Voxel-Pagodengarten aus einem einzigen Prompt, auf einer RTX 5070 mit <a href="https://github.com/Niko1221/Strata">Strata</a> (Qwen3.8-Flash-Next IQ3_S, 128K Kontext) ·
 <a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4">ganzes Video (49 s)</a></sub></p>
