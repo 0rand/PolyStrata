@@ -61,8 +61,8 @@ struct Options {
     std::string draft_model;      ///< a file of the same model to take that block from, when the model's has none;
                                   ///< for an architecture that guesses with a model of its own, that model's file
     int tail_skip = 0;            ///< a routed expert outside VRAM that every token of a call ranks this far down or
-                                  ///< further (the router's first choice is 0) is left out (STRATA_ROUTE_TAIL_SKIP);
-                                  ///< 0: none is
+                                  ///< further (the router's first choice is 0) is left out (--tail-skip,
+                                  ///< STRATA_ROUTE_TAIL_SKIP); 0: none is
 };
 
 /// A thing a model's file may call by other names than the engine does: converters differ.

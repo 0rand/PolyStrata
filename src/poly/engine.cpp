@@ -986,7 +986,7 @@ void Engine::load(const Options& o) {
         throw std::runtime_error("0 to 64 experts can be on their way into the cache at a time");
     if (opt_.window < 0 || opt_.window > 8)
         throw std::runtime_error("a window is 1 to 8 tokens, or 0 for the model's own");
-    if (opt_.tail_skip < 0) throw std::runtime_error("STRATA_ROUTE_TAIL_SKIP cannot be negative");
+    if (opt_.tail_skip < 0) throw std::runtime_error("--tail-skip (STRATA_ROUTE_TAIL_SKIP) cannot be negative");
     if (opt_.dump || std::min(opt_.prompt_batch, opt_.max_context) == 1) opt_.window = 1;
     gg_ = std::make_unique<Shards>(opt_.model);
     if (!opt_.draft_model.empty() && opt_.draft && opt_.window != 1) dg_ = std::make_unique<Shards>(opt_.draft_model);

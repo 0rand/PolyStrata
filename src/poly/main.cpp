@@ -779,8 +779,10 @@ void usage() {
                  "  --top-probs N          with --tokens: print the N most likely ids of every step to stderr\n"
                  "  --follow ID,ID,...     with --tokens: write these tokens in place of the ones picked, for\n"
                  "                         --top-probs of the same answer under other settings\n"
-                 "environment: STRATA_ROUTE_TAIL_SKIP=N  an expert outside VRAM that every token of a window ranks\n"
-                 "                         at place N+1 or later among its experts is left out (0 = off)\n");
+                 "  --tail-skip N          an expert outside VRAM that every token of a window ranks at place N+1\n"
+                 "                         or later among its experts is left out: faster, and the answers move a\n"
+                 "                         little (default 0 = none is; setup gives Qwen3.6 6)\n"
+                 "environment: STRATA_ROUTE_TAIL_SKIP=N  in place of --tail-skip (0 turns it off)\n");
 }
 
 }  // namespace
@@ -831,6 +833,7 @@ int main(int argc, char** argv) {
         else if (a == "--no-draft") o.draft = false;
         else if (a == "--draft-model") o.draft_model = val();
         else if (a == "--expert-swaps") o.expert_swaps = std::atoi(val());
+        else if (a == "--tail-skip") o.tail_skip = std::atoi(val());
         else if (a == "--draft-vocab") o.draft_vocab = std::atoi(val());
         else if (a == "--prompt-batch") o.prompt_batch = std::atoi(val());
         else if (a == "--stage-mib") o.stage_mib = std::atoi(val());
@@ -866,7 +869,7 @@ int main(int argc, char** argv) {
         usage();
         return 2;
     }
-    // read as Strata's engine reads it; a server config sets it in its "env" block
+    // over --tail-skip, as Strata's engine reads it: =0 turns a model's default off
     if (const char* v = std::getenv("STRATA_ROUTE_TAIL_SKIP")) o.tail_skip = std::atoi(v);
     const long long most = 1LL << 24;   // MiB: 16 TiB
     if (cache.o.checkpoints < 0 || cache.o.every < 0 || cache.o.park_mib < 0 || cache.o.park_mib > most ||
@@ -885,8 +888,9 @@ int main(int argc, char** argv) {
                      ms_since(t0) / 1000.0, engine.cached_experts(), engine.total_experts(), engine.cached_gib(),
                      engine.threads());
         if (o.tail_skip > 0)
-            std::fprintf(stderr, "strata-poly: STRATA_ROUTE_TAIL_SKIP=%d: an expert outside VRAM that every token of a "
-                                 "window ranks at place %d or later among its experts is left out; =0 turns it off\n",
+            std::fprintf(stderr, "strata-poly: tail skip %d: an expert outside VRAM that every token of a window ranks "
+                                 "at place %d or later among its experts is left out; STRATA_ROUTE_TAIL_SKIP=0 turns "
+                                 "it off\n",
                          o.tail_skip, o.tail_skip + 1);
         // Pages on another node than the threads are read at about two thirds of the speed.  The file cache puts a
         // page on the node of whatever read it first, so a file read back by something else lands on any.
