@@ -302,6 +302,8 @@ struct Session {
     Conversations<Engine> kept;   // the conversation in the engine, and the parked ones
     Sampler sampler;
     std::mt19937_64 rng{std::random_device{}()};
+    const std::vector<int32_t>* follow = nullptr;   // --follow: the answer's tokens, taken in place of the picks
+    const float* picked_from = nullptr;             // the logits of the last token picked
     long long asked = 0, reused = 0;   // prompt tokens of every request, and those of them not read again
     // Guesses at the tokens to come, checked a window at a time (Engine::window).  They come from the block some
     // files carry for it (Engine::draft), and from the conversation: when the last tokens repeat an earlier stretch
@@ -412,6 +414,8 @@ struct Session {
             repeats.append(history.data(), history.size());
         }
         const auto pick = [&](const float* logits) {
+            picked_from = logits;
+            if (follow && r.produced < (int64_t) follow->size()) return (*follow)[(size_t) r.produced];
             return (int32_t) sampler.pick(logits, engine.n_vocab(), s, history, rng);
         };
         // Shows a token.  False when the answer ends with it.
@@ -691,7 +695,7 @@ void print_top(const float* logits, int n_vocab, int n) {
     for (int i = 0; i < n_vocab; ++i) sum += std::exp((double) (logits[i] - top));
     std::fprintf(stderr, "top");
     for (int i = 0; i < n; ++i)
-        std::fprintf(stderr, " %d:%.4f", order[(size_t) i], std::exp((double) (logits[order[(size_t) i]] - top)) / sum);
+        std::fprintf(stderr, " %d:%.6g", order[(size_t) i], std::exp((double) (logits[order[(size_t) i]] - top)) / sum);
     std::fprintf(stderr, "\n");
 }
 
@@ -702,8 +706,7 @@ int once(Session& ss, const std::vector<int32_t>& ids, const Pictures& pictures,
     const Session::Result r = ss.generate(
         ids, pictures, pad, -1, max_new, s, stop,
         [&](int32_t t) {
-            // the logits the token was picked from are still the engine's
-            if (top_probs > 0) print_top(ss.engine.logits(), ss.engine.n_vocab(), top_probs);
+            if (top_probs > 0) print_top(ss.picked_from, ss.engine.n_vocab(), top_probs);
             out += (out.empty() ? "" : ",") + std::to_string(t);
         },
         [](int64_t, int64_t, double, bool) {});
@@ -773,7 +776,9 @@ void usage() {
                  "  --images FILE          with --tokens: the prompt's pictures, as strata-vision writes them\n"
                  "  --image-pad ID         the token whose runs in --tokens are the pictures' places, a token a row\n"
                  "  --dump-layers          print a checksum of every layer's stages to stderr\n"
-                 "  --top-probs N          with --tokens: print the N most likely ids of every step to stderr\n");
+                 "  --top-probs N          with --tokens: print the N most likely ids of every step to stderr\n"
+                 "  --follow ID,ID,...     with --tokens: write these tokens in place of the ones picked, for\n"
+                 "                         --top-probs of the same answer under other settings\n");
 }
 
 }  // namespace
@@ -799,7 +804,7 @@ int main(int argc, char** argv) {
     long long max_new = 32;
     int top_probs = 0, lookup = 3, image_pad = -1;
     std::string images;
-    std::vector<int32_t> ids, eos;
+    std::vector<int32_t> ids, eos, follow;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         auto val = [&]() -> const char* {
@@ -844,8 +849,8 @@ int main(int argc, char** argv) {
         else if (a == "--top-p") s.top_p = std::strtof(val(), nullptr);
         else if (a == "--min-p") s.min_p = std::strtof(val(), nullptr);
         else if (a == "--seed") s.seed = std::strtoull(val(), nullptr, 10);
-        else if (a == "--tokens" || a == "--eos-ids") {
-            if (!parse_ids(val(), a == "--tokens" ? ids : eos)) {
+        else if (a == "--tokens" || a == "--eos-ids" || a == "--follow") {
+            if (!parse_ids(val(), a == "--tokens" ? ids : a == "--eos-ids" ? eos : follow)) {
                 std::fprintf(stderr, "strata-poly: %s takes token ids separated by commas\n", a.c_str());
                 return 2;
             }
@@ -905,6 +910,7 @@ int main(int argc, char** argv) {
                 const std::string wrong = take_pictures(images, image_pad, engine.n_embd(), ids, pictures);
                 if (!wrong.empty()) throw std::runtime_error(wrong);
             }
+            if (!follow.empty()) ss.follow = &follow;
             rc = once(ss, ids, pictures, image_pad, max_new, s, top_probs);
         }
         engine.save_profile();
