@@ -1059,6 +1059,15 @@ void Engine::load(const Options& o) {
     alloc();
     if (!opt_.profile.empty()) read_profile(opt_.profile, (int) layers_.size(), n_expert_, prior_);
     fill_expert_cache();
+    // A card that holds every expert has VRAM to spare, and the attention caches take the whole context's rows
+    // there now when they fit: VRAM left free is what another program takes, and the caches would then grow out of
+    // the expert cache (cover()), which does not get it back when that program ends.  A piece of the expert cache
+    // (kArenaPiece) is the margin, so that cover() cuts nothing.
+    if (!kv_.empty() && cached_ == total_experts()) {
+        size_t more = 0;
+        for (const Kv& k : kv_) more += k.reserved - k.mapped;
+        if ((int64_t) ((more + kArenaPiece) >> 20) + reserve_mib_ <= vram_free_mib()) cover(opt_.max_context);
+    }
     const int threads = opt_.threads > 0 ? opt_.threads : usable_cpus();
     std::vector<std::pair<const uint8_t*, size_t>> spans;   // the routed experts in the mapped files
     for (const Layer& L : layers_) {
