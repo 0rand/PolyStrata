@@ -452,7 +452,8 @@ def pin_billing_stamp(system: str) -> str:
 def anthropic_to_messages(req: dict, think_unasked: bool = True) -> tuple[list[dict], list[dict] | None, dict]:
     """Anthropic Messages -> (template messages, template tools, template kwargs).  `think_unasked`: a request
     without "thinking", an effort or a budget gets the template's default (it thinks), as through 0.1.31; False
-    renders it without thinking (#278, the config's "anthropic_thinking": "on_request")."""
+    renders a request without "thinking" or a budget without thinking, whatever its effort (#278, the config's
+    "anthropic_thinking": "on_request")."""
     messages = []
     system = req.get("system")
     if system:
@@ -501,18 +502,19 @@ def anthropic_to_messages(req: dict, think_unasked: bool = True) -> tuple[list[d
     effort = (req.get("output_config") or {}).get("effort") if isinstance(req.get("output_config"), dict) else None
     if isinstance(thinking, dict) and thinking.get("type") == "disabled":
         kwargs["enable_thinking"] = False
+    elif thinking is None and not req.get("reasoning_budget_tokens") and not think_unasked:
+        # Opt-in (the config's "anthropic_thinking": "on_request"; the default thinks as 0.1.31 did, since a
+        # client that never asks would otherwise lose the thinking on every turn).  Anthropic's thinking is
+        # opt-in there, and an effort alone does not ask for it. Claude Code's helper calls (a session title, a
+        # topic check) ask for none and allow a few dozen tokens, which the model otherwise spent thinking and
+        # answered with no text at all; 2.1.282's title call also sends effort high.  The Chat settings' effort
+        # still applies: Service.with_shared sets "thinking" with it.  A request that gives its own
+        # reasoning_budget_tokens (#123) asks for thinking, so it thinks as before.
+        kwargs["enable_thinking"] = False
     elif effort:
         kwargs.update(effort_kwargs(effort))
     elif isinstance(thinking, dict) and thinking.get("budget_tokens"):
         kwargs.update(budget_effort(thinking["budget_tokens"]))
-    elif thinking is None and not req.get("reasoning_budget_tokens") and not think_unasked:
-        # Opt-in (the config's "anthropic_thinking": "on_request"; the default thinks as 0.1.31 did, since a
-        # client that never asks would otherwise lose the thinking on every turn).  Anthropic's thinking is
-        # opt-in there. Claude Code's helper calls (a session title, a topic check) ask for none
-        # and allow a few dozen tokens, which the model otherwise spent thinking and answered with no text at all.
-        # A config's reasoning_effort still applies: Service.with_shared sets output_config before this runs.  A
-        # request that gives its own reasoning_budget_tokens (#123) asks for thinking, so it thinks as before.
-        kwargs["enable_thinking"] = False
     return _answers_in_call_order(_late_system_to_user(messages)), tools, kwargs
 
 
@@ -688,6 +690,20 @@ def json_tool_call(body: str, schemas: dict) -> ToolCall | None:
     return ToolCall(name=obj["name"], arguments=args) if isinstance(args, dict) else None
 
 
+def param_value(value: str, declared: str | None) -> object:
+    """A parameter's text as the type its schema declares: a string as written, anything else JSON-decoded, or the
+    text when it is not JSON.  A boolean may come as Python's True / False, which Qwen3.6 writes now and then."""
+    if declared == "string":
+        return value
+    try:
+        return json.loads(value)
+    except ValueError:
+        pass
+    if declared == "boolean" and value.strip().lower() in ("true", "false"):
+        return value.strip().lower() == "true"
+    return value
+
+
 def parse_tool_call(body: str, schema: dict | None = None) -> ToolCall:
     """`<function=NAME>\\n<parameter=P>\\nVALUE\\n</parameter>...</function>` -> ToolCall. Values are JSON-decoded
     when the tool's schema says the parameter is not a string (or, without a schema, when they parse as JSON
@@ -710,14 +726,7 @@ def parse_tool_call(body: str, schema: dict | None = None) -> ToolCall:
             value = value[1:]
         if value.endswith("\n"):
             value = value[:-1]
-        declared = (props.get(pname) or {}).get("type")
-        if declared == "string":
-            args[pname] = value
-        else:
-            try:
-                args[pname] = json.loads(value)
-            except ValueError:
-                args[pname] = value
+        args[pname] = param_value(value, (props.get(pname) or {}).get("type"))
     return ToolCall(name=name, arguments=args)
 
 
@@ -754,13 +763,7 @@ def parse_glm_tool_call(body: str, schema: dict | None = None) -> ToolCall:
         value = tail.partition(ARG_VALUE)[2]
         end = value.rfind(ARG_VALUE_END)        # the last one: a value may quote the tag
         value = value[:end] if end >= 0 else value
-        if (props.get(key.strip()) or {}).get("type") == "string":
-            args[key.strip()] = value
-        else:
-            try:
-                args[key.strip()] = json.loads(value)
-            except ValueError:
-                args[key.strip()] = value
+        args[key.strip()] = param_value(value, (props.get(key.strip()) or {}).get("type"))
     return ToolCall(name=name.strip(), arguments=args)
 
 
@@ -989,6 +992,7 @@ class OutputParser:
         self.sfirst = True
         self.sval_started = False
         self.sdeclared = {}
+        self.stype = None            # the declared type of the parameter in "raw"
 
     def _scan(self) -> list[Event]:
         """Advance the streaming view of the call body in self.buf (see stream_tools)."""
@@ -1027,7 +1031,7 @@ class OutputParser:
                         args('"')
                         self.ss, self.sval_started = "str", False
                     else:
-                        self.ss = "raw"
+                        self.ss, self.stype = "raw", self.sdeclared.get(pname)
                 elif stripped.startswith("</function>"):
                     args("}")
                     self.sp += len("</function>")
@@ -1068,11 +1072,7 @@ class OutputParser:
                     value = value[1:]
                 if value.endswith("\n"):
                     value = value[:-1]
-                try:
-                    v = json.loads(value)
-                except ValueError:
-                    v = value
-                args(json.dumps(v, ensure_ascii=False))
+                args(json.dumps(param_value(value, self.stype), ensure_ascii=False))
                 self.sp += end + len(PARAM_END)
                 self.ss = "between"
             else:

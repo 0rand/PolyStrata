@@ -3105,8 +3105,8 @@ class Service:
             elif not req.get("thinking") and not req.get("output_config"):
                 if effort == "none":
                     req["thinking"] = {"type": "disabled"}
-                else:
-                    req["output_config"] = {"effort": effort}
+                else:                       # "thinking" too: under "on_request" an effort alone does not think
+                    req["thinking"], req["output_config"] = {"type": "adaptive"}, {"effort": effort}
         return req
 
     def start_telemetry(self):
@@ -4230,7 +4230,7 @@ def structured_chunks(chunks, validator):
 
 
 # ------------------------------------------------------------------------------------------------ Anthropic
-def anthropic_events(svc: Service, req: dict, ids, thinking, tools, max_new, cancel, force=None):
+def anthropic_events(svc: Service, req: dict, ids, thinking, tools, max_new, cancel, force=None, note=None):
     mid = "msg_" + uuid.uuid4().hex[:24]
     yield "message_start", {"type": "message_start", "message": {
         "id": mid, "type": "message", "role": "assistant", "model": svc.model_for(req), "content": [],
@@ -4283,6 +4283,8 @@ def anthropic_events(svc: Service, req: dict, ids, thinking, tools, max_new, can
                 yield "content_block_delta", {"type": "content_block_delta", "index": index, "delta": {
                     "type": "input_json_delta", "partial_json": json.dumps(ev.call.arguments, ensure_ascii=False)}}
         else:
+            if note is not None and x.get("timings"):
+                note(timings=x["timings"])          # the monitor's speed: Anthropic's events have no field for it
             if open_kind is not None:
                 yield close()
             stop = "stop_sequence" if x.get("stop_sequence") is not None else \
@@ -5259,6 +5261,8 @@ def make_handler(svc: Service):
                         yield from asm.feed(x)
                     elif kind == "done":
                         done = x
+                        if x.get("timings"):
+                            self._note(timings=x["timings"])    # the monitor's speed, as for Anthropic
                 if done is not None and done["finish"] != "cancel" and not cancel.is_set():
                     yield from asm.finish(done, check)
             items = self._capture(events(), "responses")
@@ -5392,7 +5396,7 @@ def make_handler(svc: Service):
             _debug_req("anthropic", req, messages, tools, max_new, thinking, len(ids))
             cancel = threading.Event()
             self._watch_client(cancel)                       # #430 #431
-            events = anthropic_events(svc, req, ids, thinking, tools, max_new, cancel, force=force)
+            events = anthropic_events(svc, req, ids, thinking, tools, max_new, cancel, force=force, note=self._note)
             events = self._capture(events, "anthropic")
             if not req.get("stream"):
                 return self._json(200, anthropic_collect(events))

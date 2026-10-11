@@ -118,6 +118,10 @@ Yes. It serves OpenAI- and Anthropic-compatible APIs on localhost, with tool cal
 `ANTHROPIC_BASE_URL=http://127.0.0.1:8080`. Codex CLI uses the Responses API at `/v1/responses`
 ([setup](DETAILS.md#the-responses-api-and-codex-cli)).
 
+For Claude Code, also add `"anthropic_thinking": "on_request"` to `strata-<model>.json` and restart. Claude Code
+first asks for a session title, and without the setting the model thinks that over before it starts on your task:
+17 s with Qwen3.6 on an 8 GB laptop ([more](DETAILS.md#using-it)).
+
 ### Who maintains it?
 
 Me, and it's MIT licensed. Strata's engine inside it comes from Strata's releases, and the added engine is all in

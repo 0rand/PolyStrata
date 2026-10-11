@@ -757,8 +757,11 @@ print(r.choices[0].message.content)
   place than it was trained with; how well it follows it there is not measured yet.
 - **Anthropic requests that don't ask for thinking (opt-in, 0.1.32, #278).** By default a `/v1/messages` request
   with no `"thinking"`, effort or budget thinks as the model's template does. `"anthropic_thinking": "on_request"` in
-  `strata-<model>.json` renders such a request without thinking - Anthropic's own rule, and what Claude Code's short
-  helper calls (a session title in a few dozen tokens) need; its real turns ask for thinking when it is on there.
+  `strata-<model>.json` renders a request with no `"thinking"` or budget without thinking, also when it gives an
+  effort. That is Anthropic's own rule, and what Claude Code's short helper calls need; its real turns ask for
+  thinking when it is on there. Claude Code 2.1.282 asks for a session title with effort `high` and no `"thinking"`:
+  without the setting, Qwen3.6 on an 8 GB laptop thought 1,441 tokens (16.6 s) over the title before the first real
+  turn could start. An effort set with "Use for other apps too" still turns thinking on.
 - **Streaming.** With `"stream": true` everything arrives as it is made: the thinking, the answer, and tool calls
   (the tool's name first, then its arguments piece by piece, like OpenAI and Anthropic do). While the model reads a
   long prompt the stream sends keep-alives, so agents do not time out; the server window prints progress every

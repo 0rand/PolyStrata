@@ -121,6 +121,33 @@ class Monitor(unittest.TestCase):
                     self.assertEqual(record["output"], "")
                     self.assertNotIn("timings", record)
 
+    def test_engine_timings_for_every_api(self):
+        """The decode speed is the engine's clock.  Anthropic's and the Responses API's events have no field for it,
+        so the requests of Claude Code and Codex showed none."""
+        plain = self.engine.generate
+
+        def clocked(ids, max_new, sampling, cancel, embeddings=None):
+            n = 0
+            try:
+                for t in plain(ids, max_new, sampling, cancel, embeddings):
+                    n += 1
+                    yield t
+            finally:
+                self.engine.last = {"prompt_tokens": len(ids), "generated": n, "reused": 0, "prompt_ms": 40.0,
+                                    "decode_ms": n * 10.0, "finish": "stop"}
+
+        with mock.patch.object(self.engine, "generate", clocked):
+            for api in ("openai", "anthropic", "responses"):
+                for stream in (False, True):
+                    with self.subTest(api=api, stream=stream):
+                        if api == "responses":
+                            code, _ = self.request("/v1/responses", {"model": "m", "input": "Say hello.",
+                                                                     "stream": stream})
+                        else:
+                            code, _ = self.chat(api, stream=stream)
+                        self.assertEqual(code, 200)
+                        self.assertEqual(self.latest()["timings"]["predicted_per_second"], 100.0)
+
     def test_history_is_authorized_and_does_not_capture_headers(self):
         self.svc.api_key = "secret"
         auth = {"Authorization": "Bearer secret"}

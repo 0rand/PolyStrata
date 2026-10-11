@@ -76,7 +76,8 @@ class MaxTokens(unittest.TestCase):
         return s, b, u.get("input_tokens"), u.get("output_tokens")
 
     def test_anthropic_thinks_only_when_asked(self):
-        # #278: Anthropic's thinking is opt-in; "thinking", an effort or a reasoning_budget_tokens (#123) asks for it
+        # #278: Anthropic's thinking is opt-in; "thinking" or a reasoning_budget_tokens (#123) asks for it, an effort
+        # alone does not
         from serve.frontend import anthropic_to_messages
         msgs = [{"role": "user", "content": "u"}]
         kw = lambda **r: anthropic_to_messages({"messages": msgs, **r}, think_unasked=False)[2]   # noqa: E731
@@ -85,7 +86,9 @@ class MaxTokens(unittest.TestCase):
         self.assertEqual(kw(), {"enable_thinking": False})
         self.assertEqual(kw(thinking={"type": "disabled"}), {"enable_thinking": False})
         self.assertNotIn("enable_thinking", kw(thinking={"type": "enabled", "budget_tokens": 2048}))
-        self.assertNotIn("enable_thinking", kw(output_config={"effort": "high"}))
+        self.assertEqual(kw(output_config={"effort": "high"}), {"enable_thinking": False})   # Claude Code's title
+        self.assertEqual(kw(thinking={"type": "adaptive"}, output_config={"effort": "medium"}),
+                         {"reasoning_effort": "medium"})
         self.assertNotIn("enable_thinking", kw(reasoning_budget_tokens=30))
 
     def test_count_tokens_is_the_prompt_messages_reads(self):
@@ -1154,6 +1157,31 @@ class ToolCallRecoverySwitch(unittest.TestCase):
     def test_switch(self):
         self.assertEqual(self.run_reply(False), [])
         self.assertEqual(self.run_reply(True), [ToolCallRecovery.CALL])
+
+
+class PythonBoolean(unittest.TestCase):
+    """Qwen3.6 now and then writes a boolean parameter as Python's False.  Claude Code refuses the string "False" for
+    Edit's replace_all, so the call carries false, whole and streamed; a string parameter keeps the word."""
+    TEXT = ("</think>\n\n<tool_call>\n<function=Edit>\n<parameter=replace_all>\nFalse\n</parameter>\n"
+            "<parameter=old_string>\nFalse\n</parameter>\n</function>\n</tool_call>")
+    SCHEMA = [{"name": "Edit", "parameters": {"properties": {"replace_all": {"type": "boolean"},
+                                                             "old_string": {"type": "string"}}}}]
+
+    def test_parser(self):
+        from serve.frontend import OutputParser
+        want = {"replace_all": False, "old_string": "False"}
+        for stream_tools in (False, True):
+            for step in (1, 7, 10_000):
+                with self.subTest(stream_tools=stream_tools, step=step):
+                    p = OutputParser(thinking=True, tools=self.SCHEMA, stream_tools=stream_tools)
+                    evs = []
+                    for i in range(0, len(self.TEXT), step):
+                        evs += p.feed(self.TEXT[i:i + step])
+                    evs += p.finish()
+                    self.assertEqual([e.call.arguments for e in evs if e.kind == "tool_call"], [want])
+                    if stream_tools:
+                        streamed = "".join(e.text for e in evs if e.kind == "tool_args")
+                        self.assertEqual(json.loads(streamed), want)
 
 
 class UnfinishedToolCall(unittest.TestCase):
@@ -2541,7 +2569,10 @@ class SharedSettings(unittest.TestCase):
         r = self.svc.with_shared({"messages": []}, "openai")
         self.assertEqual(r["reasoning_effort"], "low")
         self.assertEqual(self.svc.with_shared({"reasoning_effort": "high"}, "openai")["reasoning_effort"], "high")
-        self.assertEqual(self.svc.with_shared({}, "anthropic")["output_config"], {"effort": "low"})
+        r = self.svc.with_shared({"messages": [{"role": "user", "content": "u"}]}, "anthropic")
+        self.assertEqual(r["output_config"], {"effort": "low"})
+        from serve.frontend import anthropic_to_messages     # it thinks also under "anthropic_thinking": "on_request"
+        self.assertEqual(anthropic_to_messages(r, think_unasked=False)[2], {"reasoning_effort": "low"})
 
     def test_off_again(self):
         self.req("/settings", {"defaults": {"temperature": 0.3}})
