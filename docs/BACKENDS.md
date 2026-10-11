@@ -67,10 +67,16 @@ downloaded to setup's own. The engine is compiled once for all of them. On the t
 disk, the first install took a minute, most of it the compile, and the other two 17 seconds each.
 
 On Windows the three are installed the same way, with `START-HERE.bat` or `python setup.py` in place of
-`./setup.sh`. The engine is compiled there with the CUDA Toolkit and Visual Studio's 2022 compiler, which is the
-newest that CUDA 13 takes. A newer Visual Studio serves when it has the 2022 toolset (v143) among its
-components; setup offers to install what is missing. GLM 5.3 Flash was not run on Windows, and setup says so
-before it installs it there.
+`./setup.sh`. There setup downloads `strata-poly` and its image encoder ready-made from the latest release when that
+release was built from the same source (`tools/make_poly_release.py`: RTX 20 to RTX 50 cards, CUDA 13.0, ggml's
+CPU code for AVX2), checks the archive against the SHA-256 GitHub publishes for it, and installs NVIDIA's CUDA 13
+libraries from pip, as it does for the Qwen engine. With `--build`, on a processor without AVX2, or for a source the
+release was not built from, it compiles the engine with the CUDA Toolkit and Visual Studio's 2022 compiler, which is
+the newest that CUDA 13 takes. A newer Visual Studio serves when it has the 2022 toolset (v143) among its
+components; setup offers to install what is missing. After a `git pull` that changes the source, an engine compiled
+here is compiled again, and a ready-made one is replaced by the release's for the new source; until there is one,
+the ready-made engine already installed starts. GLM 5.3 Flash was not run on Windows, and setup says so before it
+installs it there.
 
 Each install is a model of its own: `--list-models`, `/model` and the web page's list show all of them, and
 `./setup.sh --check` has a line for each with what this PC's card and RAM make of it.

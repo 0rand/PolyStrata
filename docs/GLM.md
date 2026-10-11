@@ -94,7 +94,7 @@ draft block, 2.8 GB, once for every size that needs it. The web app is at
 `http://127.0.0.1:8080`. After that, `./setup.sh` starts the model again without asking.
 
 - The compile needs g++ and the CUDA toolkit (12.8 or newer for an RTX 50 card). Setup offers to install what is
-  missing. No release ships `strata-poly` yet.
+  missing. The ready-made `strata-poly` of a release is for Windows only.
 - You already have the GGUF: `./setup.sh --family glm --gguf-dir /folder/with/the/file`.
 - The other options are the README's: `--context`, `--port`, `--host`, `--api-key`, `--gpu`, `--yes`, `--no-start`.
   The ones for the Qwen engine (`--kv`, `--vision`, `--low-ram`, `--parallel`, ...) are named and left out.

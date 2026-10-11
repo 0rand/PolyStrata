@@ -237,9 +237,10 @@ Die vollständige Liste: [docs/GLM.md](docs/GLM.md#what-you-need) (englisch).
 | **Festplatte** | 13, 17 oder 23 GB für die Modelldatei, 1 GB mehr, um Bilder zu lesen. |
 | **System** | Linux oder Windows 10 / 11 und ein aktueller NVIDIA-Treiber. |
 
-Alles andere richtet der Installer ein, wie bei GLM 5.3 Flash. Unter Windows kompiliert er die Engine mit dem 2022er
-Compiler von Visual Studio und dem CUDA-Toolkit und bietet an, beides zu installieren. Noch nicht: AMD-Karten, mehrere
-Karten.
+Alles andere richtet der Installer ein, wie bei GLM 5.3 Flash. Unter Windows lädt er die Engine fertig aus dem
+neuesten Release. Auf einem Prozessor ohne AVX2, oder in einer Kopie, deren Engine sich seit diesem Release geändert
+hat, kompiliert er sie stattdessen mit dem 2022er Compiler von Visual Studio und dem CUDA-Toolkit und bietet an, beides
+zu installieren. Noch nicht: AMD-Karten, mehrere Karten.
 
 ### Ornith 1.5
 
@@ -250,9 +251,10 @@ Karten.
 | **Festplatte** | 14, 17 oder 24 GB für die Modelldatei, 1 GB mehr, um Bilder zu lesen. |
 | **System** | Linux oder Windows 10 / 11 und ein aktueller NVIDIA-Treiber. |
 
-Alles andere richtet der Installer ein, wie bei GLM 5.3 Flash. Unter Windows kompiliert er die Engine mit dem 2022er
-Compiler von Visual Studio und dem CUDA-Toolkit und bietet an, beides zu installieren. Noch nicht: AMD-Karten, mehrere
-Karten.
+Alles andere richtet der Installer ein, wie bei GLM 5.3 Flash. Unter Windows lädt er die Engine fertig aus dem
+neuesten Release. Auf einem Prozessor ohne AVX2, oder in einer Kopie, deren Engine sich seit diesem Release geändert
+hat, kompiliert er sie stattdessen mit dem 2022er Compiler von Visual Studio und dem CUDA-Toolkit und bietet an, beides
+zu installieren. Noch nicht: AMD-Karten, mehrere Karten.
 
 ### Gemma 4 26B-A4B
 
@@ -263,9 +265,10 @@ Karten.
 | **Festplatte** | 11, 13 oder 17 GB für die Modelldatei und ihr Entwurfsmodell, 1 GB mehr, um Bilder zu lesen. |
 | **System** | Linux oder Windows 10 / 11 und ein aktueller NVIDIA-Treiber. |
 
-Alles andere richtet der Installer ein, wie bei GLM 5.3 Flash. Unter Windows kompiliert er die Engine mit dem 2022er
-Compiler von Visual Studio und dem CUDA-Toolkit und bietet an, beides zu installieren. Noch nicht: AMD-Karten, mehrere
-Karten.
+Alles andere richtet der Installer ein, wie bei GLM 5.3 Flash. Unter Windows lädt er die Engine fertig aus dem
+neuesten Release. Auf einem Prozessor ohne AVX2, oder in einer Kopie, deren Engine sich seit diesem Release geändert
+hat, kompiliert er sie stattdessen mit dem 2022er Compiler von Visual Studio und dem CUDA-Toolkit und bietet an, beides
+zu installieren. Noch nicht: AMD-Karten, mehrere Karten.
 
 Was jedes der drei braucht und wie es geprüft wurde: [docs/BACKENDS.md](docs/BACKENDS.md#install) (englisch).
 

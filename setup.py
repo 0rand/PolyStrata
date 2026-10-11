@@ -463,11 +463,18 @@ VISION = {"gpu": {"max_tokens": 1024, "reserve_mib": 700},
           "cpu": {"max_tokens": 300, "reserve_mib": 700}}
 EXE = "strata.exe" if WIN else "strata"
 VEXE = "strata-vision.exe" if WIN else "strata-vision"
-# The engine of GLM 5.3 Flash and of the models that are read from one GGUF (docs/BACKENDS.md).  No release ships
-# it yet: it is compiled here, into a folder of its own like the CUDA 12 engine's, so the ready-made engine beside it
-# stays as it was downloaded.  It was called strata-glm, after its first model, and an install from then has that
-# name and folder in its run config (poly_config(), update_poly_engine()).
+# The engine of GLM 5.3 Flash and of the models that are read from one GGUF (docs/BACKENDS.md), in a folder of its
+# own like the CUDA 12 engine's, so the ready-made engine beside it stays as it was downloaded.  On Windows it comes
+# ready-made when the latest release was built from this checkout's engine source, and is compiled here otherwise.
+# It was called strata-glm, after its first model, and an install from then has that name and folder in its run
+# config (poly_config(), update_poly_engine()).
 POLY_EXE = "strata-poly.exe" if WIN else "strata-poly"
+# The ready-made one (tools/make_poly_release.py): an asset named after the source_hash() of the engine and the
+# encoder in it (poly_asset()), so a checkout finds the build of its own source or none.  STRATA_POLY_PREBUILT_URL:
+# another folder, a local one too.
+POLY_PREBUILT_URL = os.environ.get("STRATA_POLY_PREBUILT_URL",
+                                   "https://github.com/VecSzn/PolyStrata/releases/latest/download/")
+POLY_ASSET = "strata-poly-windows-x64-{src}.zip"
 # A model of strata-poly that reads pictures has its image encoder on the GPU from this much VRAM (GiB), and on the
 # CPU below it: the encoder holds 1.6 to 2.4 GB there, which a smaller card needs for the model
 POLY_VISION_GPU_GB = 15.5
@@ -4838,6 +4845,70 @@ def poly_saved_conv(paths) -> int | None:
     return None
 
 
+def poly_asset() -> str:
+    """The ready-made strata-poly's asset for this checkout: the engine and the image encoder are both in it."""
+    return POLY_ASSET.format(src=source_hash(ENGINE_SOURCES + VISION_SOURCES))
+
+
+def get_poly_prebuilt(gpu) -> bool:
+    """The ready-made strata-poly and image encoder of this checkout's source in engine-poly/, with NVIDIA's CUDA 13
+    libraries from pip.  False when the release has none for this source or this GPU, off Windows, with a driver
+    older than CUDA 13's or a CPU without AVX2.  An engine already there for this source and GPU is kept, ready-made
+    or compiled."""
+    eng = ROOT / ENGINE_POLY_DIR
+    stamp = eng / "BUILD.json"
+    meta = json.loads(stamp.read_text()) if stamp.exists() else {}
+    src, vsrc = source_hash(ENGINE_SOURCES), source_hash(VISION_SOURCES)
+    cards = {int(x) for x in gpu.get("archs", [gpu["arch"]])}
+    # a ready-made one came with its encoder, which is out of date when tools/vision changed
+    if meta.get("src") == src and (eng / POLY_EXE).exists() and cards <= {int(x) for x in meta.get("archs", [])} \
+            and (meta.get("source") != "release" or meta.get("vision_src") == vsrc):
+        return True
+    if not WIN or not POLY_PREBUILT_URL or driver_major(gpu) < MIN_DRIVER or cpu_floor(cpu_info()[1]):
+        return False
+    base = POLY_PREBUILT_URL if POLY_PREBUILT_URL.endswith(("/", "\\")) else POLY_PREBUILT_URL + "/"
+    asset = poly_asset()
+    try:                                               # a checkout after the release has a source it was not built from
+        if is_local(base):
+            if not Path(base[7:] if base.lower().startswith("file://") else base, asset).exists():
+                raise FileNotFoundError(f"no {asset} in {base}")
+        else:
+            req = urllib.request.Request(base + asset, method="HEAD", headers={"User-Agent": "strata-setup"})
+            urllib.request.urlopen(req, timeout=60).close()
+    except OSError as e:
+        say(f"  No ready-made strata-poly for this checkout ({e})")
+        return False
+    eng.mkdir(exist_ok=True)
+    z = eng / asset
+    say("  Downloading the ready-made strata-poly engine ...")
+    download(base + asset, z, "strata-poly engine")
+    try:
+        verify_engine_archive(z, asset, base)
+    except UnverifiedEngine as e:
+        warn(f"the ready-made strata-poly is not installed ({e})")
+        return False
+    tmp = eng / "_unpack"
+    shutil.rmtree(tmp, ignore_errors=True)
+    try:
+        with zipfile.ZipFile(z) as f:
+            f.extractall(tmp)
+    finally:
+        drop_archive(z)
+    new = json.loads((tmp / "BUILD.json").read_text(encoding="utf-8"))
+    archs = {int(x) for x in new.get("archs", [])}
+    if (new.get("src"), new.get("vision_src")) != (src, vsrc) or not cards <= archs:
+        warn(f"the ready-made strata-poly is built for {', '.join(f'sm_{x}' for x in sorted(archs))}, not for "
+             f"{', '.join(f'sm_{x}' for x in sorted(cards - archs)) or 'this source'}")
+        shutil.rmtree(tmp, ignore_errors=True)
+        return False
+    pip_cuda_libs(13)                                  # before the engine there is replaced, should pip fail
+    for p in tmp.iterdir():
+        p.replace(eng / p.name)
+    shutil.rmtree(tmp, ignore_errors=True)
+    ok(f"ready-made strata-poly for {', '.join(f'sm_{x}' for x in sorted(archs))} (CUDA {new.get('cuda', '?')})")
+    return True
+
+
 def build_engine_poly(gpu, yes, llama, vision="none") -> Path:
     """Compile strata-poly for this GPU and, for images, the encoder beside it ("gpu": with CUDA, "cpu": without);
     the results go to engine-poly/.  Each is compiled again when its source changed (a `git pull`); the engine also
@@ -4847,16 +4918,19 @@ def build_engine_poly(gpu, yes, llama, vision="none") -> Path:
     stamp = eng / "BUILD.json"
     meta = json.loads(stamp.read_text()) if stamp.exists() else {}
     src, vsrc = source_hash(ENGINE_SOURCES), source_hash(VISION_SOURCES)
+    cards = {int(x) for x in gpu.get("archs", [gpu["arch"]])}
     built = {int(x) for x in meta.get("archs", [])}
-    archs = sorted(built | {int(x) for x in gpu.get("archs", [gpu["arch"]])})
+    # one compiled here keeps the cards it was built for; one in place of a ready-made engine is for these cards
+    release = meta.get("source") == "release"
+    archs = sorted(cards if release else built | cards)
     have = (eng / POLY_EXE).exists()
-    engine_ok = have and meta.get("src") == src and set(archs) == built
+    engine_ok = have and meta.get("src") == src and (cards <= built if release else set(archs) == built)
     # an encoder built with CUDA also runs on the CPU, so the one there is kept unless the GPU is asked of a CPU one
     was = meta.get("vision") or "none"
     vision_ok = vision == "none" or ((eng / VEXE).exists() and meta.get("vision_src") == vsrc and
                                      (was == "gpu" or vision == "cpu"))
     if engine_ok and vision_ok:
-        ok("strata-poly already built for this PC")
+        ok(f"strata-poly already {'downloaded' if release else 'built'} for this PC")
         return eng
     # CUDA 12.8 is the toolkit it was written and measured with, on an RTX 5090: the Qwen engine's reason to want 13.0
     # there (#220, its prompt path) is not this engine's
@@ -4884,6 +4958,7 @@ def build_engine_poly(gpu, yes, llama, vision="none") -> Path:
         was, meta = vision, {**meta, "vision_src": vsrc}
     bindir = Path(nvcc).parent                            # the toolkit's own libraries (bin, bin/x64, lib64)
     dirs = [str(x) for x in (bindir, bindir / "x64", bindir.parent / "lib64") if x.is_dir()]
+    dirs += [d for d in cuda_lib_dirs(13) if d not in dirs]   # pip's, for a ready-made encoder kept beside it
     stamp.write_text(json.dumps({"source": "local", "version": source_version(), "archs": archs, "cuda_dirs": dirs,
                                  "src": src, "vision": was, "vision_src": meta.get("vision_src")}, indent=1))
     ok(f"strata-poly compiled: {eng / POLY_EXE}" + (f", image encoder: {eng / VEXE}" if vision != "none" else ""))
@@ -4891,10 +4966,12 @@ def build_engine_poly(gpu, yes, llama, vision="none") -> Path:
 
 
 def update_poly_engine(cfg: dict, yes=False, cfg_path: Path | None = None) -> None:
-    """Before a model of strata-poly starts: the engine setup compiled is compiled again when its source changed (a
-    `git pull`) or the card is another generation.  A compile that fails must not stop the start: the installed one
-    runs.  An install from before the engine was renamed has the old engine in its config: the engine is compiled
-    under its new name and, with cfg_path, the config is moved to it."""
+    """Before a model of strata-poly starts: the engine setup installed is replaced when its source changed (a `git
+    pull`) or the card is another generation, a ready-made one by the release's for the new source, one compiled here
+    by a compile.  A ready-made one stays while no release has the new source: a compile would first install the
+    build tools.  A failure must not stop the start: the installed one runs.  An install from before the engine was
+    renamed has the old engine in its config: the engine is compiled under its new name and, with cfg_path, the
+    config is moved to it."""
     eng = Path(cfg["exe"]).parent
     renamed = eng == ROOT / OLD_ENGINE_POLY_DIR and Path(cfg["exe"]).name == OLD_POLY_EXE
     if renamed:
@@ -4910,24 +4987,32 @@ def update_poly_engine(cfg: dict, yes=False, cfg_path: Path | None = None) -> No
         # the encoder too, when this model has one: on the device it was built for
         vis = cfg.get("vision")
         vision = ("gpu" if meta.get("vision") == "gpu" or vis.get("gpu") else "cpu") if isinstance(vis, dict) else "none"
-        if not (meta.get("src") == source_hash(ENGINE_SOURCES) and (eng / POLY_EXE).exists()
-                and int(gpu["arch"]) in [int(x) for x in meta.get("archs", [])]
+        changed = renamed
+        fits = int(gpu["arch"]) in [int(x) for x in meta.get("archs", [])]
+        if not (meta.get("src") == source_hash(ENGINE_SOURCES) and (eng / POLY_EXE).exists() and fits
                 and (vision == "none" or meta.get("vision_src") == source_hash(VISION_SOURCES))):
+            # one compiled here (--build, a CPU without AVX2) stays so
+            if meta.get("source") == "release" and not get_poly_prebuilt(gpu) and fits:
+                warn("the latest release has no ready-made strata-poly of this source: the one installed starts "
+                     "(START-HERE.bat --setup --build compiles this source)")
+                return
             build_engine_poly(gpu, yes, get_llama_cpp(), vision)
-        if renamed:
+            # a ready-made engine loads CUDA from pip, one compiled here from the toolkit it was compiled with
+            cfg["lib_dirs"], changed = engine_lib_dirs(eng), True
+        if changed:
             cfg["exe"] = str(eng / POLY_EXE)
             if cfg_path is not None:
                 cfg_path.write_text(json.dumps(cfg, indent=1), encoding="utf-8")
+        if renamed:
             ok(f"this install's engine is {POLY_EXE} now (it was {OLD_POLY_EXE}); {OLD_ENGINE_POLY_DIR}/ can be deleted")
     except (Exception, SystemExit) as e:
-        warn(f"could not compile the updated strata-poly{'' if isinstance(e, SystemExit) else f' ({e})'}: "
-             "starting the installed one")
+        warn(f"could not update strata-poly{'' if isinstance(e, SystemExit) else f' ({e})'}: starting the installed one")
 
 
 def poly_setup(a, family, gpu, hip, cuda_tk, multi, ram, data, elsewhere, port, adopted) -> int:
     """Steps 2 to 7 for a model of strata-poly (docs/GLM.md, docs/BACKENDS.md): its questions, the Python
-    packages, the engine (compiled here), the model file, its tokenizer and expert profile, the run config and the
-    start script."""
+    packages, the engine (ready-made or compiled here), the model file, its tokenizer and expert profile, the run
+    config and the start script."""
     fam = FAMILIES[family]
     title = fam["title"]
     if hip:
@@ -5097,8 +5182,10 @@ def poly_setup(a, family, gpu, hip, cuda_tk, multi, ram, data, elsewhere, port, 
     step(4, "the strata-poly engine")
     llama = get_llama_cpp()
     ok(f"llama.cpp {LLAMA_CPP_COMMIT[:7]} (gguf-py, ggml)")
+    if not a.build:
+        get_poly_prebuilt(gpu)
     eng = build_engine_poly(gpu, a.yes, llama, vision)
-    lib_dirs = json.loads((eng / "BUILD.json").read_text()).get("cuda_dirs") or cuda_lib_dirs(13)
+    lib_dirs = engine_lib_dirs(eng)
     ok(f"engine: {eng / POLY_EXE}")
 
     step(5, f"downloading {title} {model}")

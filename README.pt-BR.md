@@ -233,8 +233,10 @@ A lista completa: [docs/GLM.md](docs/GLM.md#what-you-need) (em inglês).
 | **Disco** | 13, 17 ou 23 GB para o arquivo do modelo, 1 GB a mais para ler imagens. |
 | **Sistema** | Linux ou Windows 10 / 11, e um driver NVIDIA atual. |
 
-O instalador cuida de todo o resto, como faz com o GLM 5.3 Flash. No Windows ele compila o motor com o compilador de
-2022 do Visual Studio e o CUDA Toolkit, e oferece instalar os dois. Ainda não: placas AMD, várias placas.
+O instalador cuida de todo o resto, como faz com o GLM 5.3 Flash. No Windows ele baixa o motor já compilado da
+última versão publicada. Num processador sem AVX2, ou numa cópia cujo motor mudou depois dessa versão, ele compila o
+motor no lugar, com o compilador de 2022 do Visual Studio e o CUDA Toolkit, e oferece instalar os dois. Ainda não:
+placas AMD, várias placas.
 
 ### Ornith 1.5
 
@@ -245,8 +247,10 @@ O instalador cuida de todo o resto, como faz com o GLM 5.3 Flash. No Windows ele
 | **Disco** | 14, 17 ou 24 GB para o arquivo do modelo, 1 GB a mais para ler imagens. |
 | **Sistema** | Linux ou Windows 10 / 11, e um driver NVIDIA atual. |
 
-O instalador cuida de todo o resto, como faz com o GLM 5.3 Flash. No Windows ele compila o motor com o compilador de
-2022 do Visual Studio e o CUDA Toolkit, e oferece instalar os dois. Ainda não: placas AMD, várias placas.
+O instalador cuida de todo o resto, como faz com o GLM 5.3 Flash. No Windows ele baixa o motor já compilado da
+última versão publicada. Num processador sem AVX2, ou numa cópia cujo motor mudou depois dessa versão, ele compila o
+motor no lugar, com o compilador de 2022 do Visual Studio e o CUDA Toolkit, e oferece instalar os dois. Ainda não:
+placas AMD, várias placas.
 
 ### Gemma 4 26B-A4B
 
@@ -257,8 +261,10 @@ O instalador cuida de todo o resto, como faz com o GLM 5.3 Flash. No Windows ele
 | **Disco** | 11, 13 ou 17 GB para o arquivo do modelo e o modelo de rascunho dele, 1 GB a mais para ler imagens. |
 | **Sistema** | Linux ou Windows 10 / 11, e um driver NVIDIA atual. |
 
-O instalador cuida de todo o resto, como faz com o GLM 5.3 Flash. No Windows ele compila o motor com o compilador de
-2022 do Visual Studio e o CUDA Toolkit, e oferece instalar os dois. Ainda não: placas AMD, várias placas.
+O instalador cuida de todo o resto, como faz com o GLM 5.3 Flash. No Windows ele baixa o motor já compilado da
+última versão publicada. Num processador sem AVX2, ou numa cópia cujo motor mudou depois dessa versão, ele compila o
+motor no lugar, com o compilador de 2022 do Visual Studio e o CUDA Toolkit, e oferece instalar os dois. Ainda não:
+placas AMD, várias placas.
 
 Do que cada um dos três precisa e como foi conferido: [docs/BACKENDS.md](docs/BACKENDS.md#install) (em inglês).
 

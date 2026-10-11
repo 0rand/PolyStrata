@@ -141,6 +141,7 @@ class Config(unittest.TestCase):
                     raise RuntimeError("no compiler")
                 (root / setup.ENGINE_POLY_DIR).mkdir(exist_ok=True)
                 (root / setup.ENGINE_POLY_DIR / setup.POLY_EXE).write_text("")
+                (root / setup.ENGINE_POLY_DIR / "BUILD.json").write_text(json.dumps({"cuda_dirs": ["/cuda/bin"]}))
                 return root / setup.ENGINE_POLY_DIR
 
             with mock.patch.object(setup, "ROOT", root), mock.patch.object(setup, "get_llama_cpp", lambda: root), \
@@ -148,12 +149,13 @@ class Config(unittest.TestCase):
                 # a compile that fails leaves the install as it was: the old engine still starts
                 with mock.patch.object(setup, "build_engine_poly", lambda *a: build(*a, works=False)):
                     _code, out = quiet(setup.update_poly_engine, dict(cfg), False, p)
-                self.assertIn("could not compile", out)
+                self.assertIn("could not update strata-poly", out)
                 self.assertEqual(json.loads(p.read_text())["exe"], cfg["exe"])
                 with mock.patch.object(setup, "build_engine_poly", build):
                     _code, out = quiet(setup.update_poly_engine, cfg, False, p)
             new = root / setup.ENGINE_POLY_DIR / setup.POLY_EXE
             self.assertEqual((Path(cfg["exe"]), Path(json.loads(p.read_text())["exe"])), (new, new))
+            self.assertEqual(json.loads(p.read_text())["lib_dirs"], ["/cuda/bin"])
             self.assertIn(setup.OLD_ENGINE_POLY_DIR + "/ can be deleted", out)
         self.assertFalse(setup.poly_config({"exe": "/x/engine/" + setup.EXE}))
 

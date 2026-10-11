@@ -225,8 +225,9 @@ NVIDIA：Q2_0 用的是引擎 0.1.36，其他各行用的是 0.1.26（4K 回答�
 | **硬盘** | 模型文件 13、17 或 23 GB，要看图片再加 1 GB。 |
 | **系统** | Linux 或 Windows 10 / 11，以及 NVIDIA 的最新显卡驱动。 |
 
-其他的都由安装程序搞定，和 GLM 5.3 Flash 一样。在 Windows 上，安装程序用 Visual Studio 的 2022 编译器和 CUDA 工具包
-编译引擎，缺的话会问你要不要装。暂时不支持：AMD 显卡、多张显卡。
+其他的都由安装程序搞定，和 GLM 5.3 Flash 一样。在 Windows 上，安装程序直接从最新 release 下载编译好的引擎。
+如果 CPU 不支持 AVX2，或者你这份代码的引擎在那个 release 之后又改过，
+就改用 Visual Studio 的 2022 编译器和 CUDA 工具包在本机编译，缺的话会问你要不要装。暂时不支持：AMD 显卡、多张显卡。
 
 ### Ornith 1.5
 
@@ -237,8 +238,9 @@ NVIDIA：Q2_0 用的是引擎 0.1.36，其他各行用的是 0.1.26（4K 回答�
 | **硬盘** | 模型文件 14、17 或 24 GB，要看图片再加 1 GB。 |
 | **系统** | Linux 或 Windows 10 / 11，以及 NVIDIA 的最新显卡驱动。 |
 
-其他的都由安装程序搞定，和 GLM 5.3 Flash 一样。在 Windows 上，安装程序用 Visual Studio 的 2022 编译器和 CUDA 工具包
-编译引擎，缺的话会问你要不要装。暂时不支持：AMD 显卡、多张显卡。
+其他的都由安装程序搞定，和 GLM 5.3 Flash 一样。在 Windows 上，安装程序直接从最新 release 下载编译好的引擎。
+如果 CPU 不支持 AVX2，或者你这份代码的引擎在那个 release 之后又改过，
+就改用 Visual Studio 的 2022 编译器和 CUDA 工具包在本机编译，缺的话会问你要不要装。暂时不支持：AMD 显卡、多张显卡。
 
 ### Gemma 4 26B-A4B
 
@@ -249,8 +251,9 @@ NVIDIA：Q2_0 用的是引擎 0.1.36，其他各行用的是 0.1.26（4K 回答�
 | **硬盘** | 模型文件和它的草稿模型共 11、13 或 17 GB，要看图片再加 1 GB。 |
 | **系统** | Linux 或 Windows 10 / 11，以及 NVIDIA 的最新显卡驱动。 |
 
-其他的都由安装程序搞定，和 GLM 5.3 Flash 一样。在 Windows 上，安装程序用 Visual Studio 的 2022 编译器和 CUDA 工具包
-编译引擎，缺的话会问你要不要装。暂时不支持：AMD 显卡、多张显卡。
+其他的都由安装程序搞定，和 GLM 5.3 Flash 一样。在 Windows 上，安装程序直接从最新 release 下载编译好的引擎。
+如果 CPU 不支持 AVX2，或者你这份代码的引擎在那个 release 之后又改过，
+就改用 Visual Studio 的 2022 编译器和 CUDA 工具包在本机编译，缺的话会问你要不要装。暂时不支持：AMD 显卡、多张显卡。
 
 这三个模型各自需要什么、是怎么验证的：[docs/BACKENDS.md](docs/BACKENDS.md#install)（英文）。
 
