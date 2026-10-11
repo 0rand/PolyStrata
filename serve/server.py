@@ -140,9 +140,11 @@ EFFORT_TEXT = {"low": "Reasoning effort is set to low. Keep your thinking brief 
                         "clarity in the final answer."}
 VISION_START = "<|vision_start|>"
 # The tokens that open a chat turn in each call format's template.  The last one in a prompt begins the reply's
-# turn: strata-poly keeps a checkpoint there (turn_at), which the chat's next request goes on from.
+# turn: strata-poly keeps a checkpoint there (turn_at), which the chat's next request goes on from.  The second one
+# ends the first turn: the system prompt with the tools, which "warm_start" keeps.
 TURN_OPENERS = {"function": ("<|im_start|>",), "gemma": ("<|turn>",),
                 "glm": ("<|system|>", "<|user|>", "<|assistant|>", "<|observation|>")}
+WARM_MIN_TOKENS = 2048           # a shorter prompt start is quick to read again: not kept
 # #606: a reply that repeats one token this many times in a row is ended there ("length"): a model in a loop, or a
 # broken state that answers one token forever (an issue saw 36,689 tokens of "!"). The config's "repeat_stop_tokens"
 # sets it; 0 turns it off.
@@ -2676,6 +2678,11 @@ class Service:
         self.repeat_stop_tokens = REPEAT_STOP_TOKENS     # #606: one token this many times in a row ends a reply (0: off)
         self.anthropic_think_unasked = True               # #278: "anthropic_thinking": "on_request" -> False
         self.tool_call_recovery = False                   # opt-in: tool calls in forms next to the template's
+        # opt-in "warm_start": the first turn of the last long prompt with tools (an agent's system prompt), kept
+        # next to the config and read when the server starts; a request stops that read and goes first
+        self.warm_start = False
+        self.warm_ids = None                              # the start kept last (keep_start())
+        self.warm_stop = threading.Event()                # set: no warm read runs, or the one running is to stop
         self.models_root = ROOT                          # where the installation's run configs are (serve/models.py)
         # "memory_debug": true in the config (or $STRATA_MEMORY_DEBUG): a switch prints the free VRAM around it
         self.memory_debug = bool(os.environ.get("STRATA_MEMORY_DEBUG"))
@@ -2718,6 +2725,65 @@ class Service:
 
     def loaded(self) -> bool:
         return not hasattr(self.engine, "alive") or self.engine.alive()
+
+    def warm_path(self) -> Path:
+        """"warm_start"'s file: next to the run config, one per model."""
+        config = Path(self.config_path)
+        return config.with_name(config.stem + ".warm-start")
+
+    def keep_start(self, ids) -> None:
+        """"warm_start": keep the prompt's first turn (the system prompt with the tools) for start_warm(), when it is
+        long and not the one kept already."""
+        opens = (i for i, t in enumerate(ids) if t in self.turn_ids)
+        next(opens, None)
+        end = next(opens, None)                         # the second turn's opener: the first turn ends there
+        if end is None or end < WARM_MIN_TOKENS or ids[:end] == self.warm_ids:
+            return
+        self.warm_ids = ids[:end]
+        path = self.warm_path()
+        tmp = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")
+        try:
+            tmp.write_text(json.dumps(self.warm_ids), encoding="utf-8")
+            os.replace(tmp, path)
+        except OSError as e:
+            print(f"[strata] warm start: {path} could not be written ({e})", flush=True)
+
+    def start_warm(self) -> None:
+        """"warm_start": read the prompt start keep_start() kept when the server ran last, so that the first request
+        that starts with it again reads only what follows.  A request stops the read (run() sets warm_stop); the part
+        read stays cached."""
+        if not self.warm_start or not self.loaded():
+            return
+        path = self.warm_path()
+        try:
+            ids = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError) as e:
+            print(f"[strata] warm start: {path} cannot be read ({e})", flush=True)
+            return
+        if not (isinstance(ids, list) and WARM_MIN_TOKENS <= len(ids) < self.engine.max_context and
+                all(isinstance(t, int) and not isinstance(t, bool) and t >= 0 for t in ids)):
+            print(f"[strata] warm start: {path} is not a kept prompt start; ignored", flush=True)
+            return
+        self.warm_ids = ids
+        stop = self.warm_stop = threading.Event()
+
+        def warm():
+            t0, read = time.perf_counter(), 0
+            try:
+                with self.fifo:
+                    if not stop.is_set():               # read to the end: the one token comes after the prompt
+                        read = sum(t is not None for t in self.engine.generate(ids, 1, {}, stop))
+            except Exception as e:                      # the next request starts a dead engine again (run())
+                print(f"[strata] warm start failed: {e}", flush=True)
+                return
+            took = time.perf_counter() - t0
+            print(f"[strata] warm start: read {len(ids)} tokens in {took:.1f} s" if read else
+                  f"[strata] warm start: stopped for a request after {took:.1f} s", flush=True)
+
+        print(f"[strata] warm start: reading the {len(ids)}-token prompt start kept last time", flush=True)
+        threading.Thread(target=warm, name="warm-start", daemon=True).start()
 
     def models(self) -> list[dict]:
         """GET /api/models: the installation's models (serve/models.py), the one this server answers with marked
@@ -3394,6 +3460,7 @@ class Service:
             # run on the GPU at the same time - an encode during a running request left that request stuck at
             # "reading the prompt" with CPU and GPU busy, for good (reproduced).  So encoding takes its turn in the
             # same FIFO as the requests.
+            self.warm_stop.set()
             with self.fifo:
                 encoded = (self.vision.encode_all(images) if hasattr(self.vision, "encode_all")
                            else [self.vision.encode(src) for src in images])
@@ -3619,6 +3686,9 @@ class Service:
         emb, self.embeddings.path = getattr(self.embeddings, "path", None), None   # this run's to delete now
         if emb:                                         # strata-poly finds the images' rows by their token
             sampling = {**(sampling or {}), "image_pad": self.embeddings.pad}
+        self.warm_stop.set()                            # a warm read (start_warm()) gives way
+        if self.warm_start and tools and not emb:
+            self.keep_start(ids)
         # Only a DONE line replaces engine.last, so a request that died, errored or was disconnected must not have
         # the PREVIOUS request's decode figures recorded as its own: each pass keeps its own DONE (a segment) if
         # one arrived.  A reasoning-budget continuation is another native generation, not another API request,
@@ -6036,6 +6106,10 @@ def main() -> int:
     if not isinstance(recovery, bool):
         raise SystemExit(f"[strata] config \"tool_call_recovery\" must be true or false, not {recovery!r}")
     svc.tool_call_recovery = recovery
+    warm = cfg.get("warm_start", False)                 # opt-in: see Service.start_warm
+    if not isinstance(warm, bool):
+        raise SystemExit(f"[strata] config \"warm_start\" must be true or false, not {warm!r}")
+    svc.warm_start = warm
     rs = cfg.get("repeat_stop_tokens", REPEAT_STOP_TOKENS)   # #606: opt-out with 0
     if isinstance(rs, bool) or not isinstance(rs, int) or rs < 0:
         raise SystemExit(f"[strata] config \"repeat_stop_tokens\" must be a whole number >= 0 (0 = off), not {rs!r}")
@@ -6080,6 +6154,7 @@ def main() -> int:
               f"chat: {', '.join(hub.servers)}", flush=True)
         hub.start()
         atexit.register(hub.close)                      # the servers PolyStrata started end with it
+    svc.start_warm()                                    # before serve(): a first request finds its stop event
     httpd = serve(svc, host=a.host, port=a.port)
     svc.start_idle_unload()
     here = "127.0.0.1" if a.host in ("0.0.0.0", "", "::") else a.host

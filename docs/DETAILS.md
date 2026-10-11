@@ -762,6 +762,15 @@ print(r.choices[0].message.content)
   thinking when it is on there. Claude Code 2.1.282 asks for a session title with effort `high` and no `"thinking"`:
   without the setting, Qwen3.6 on an 8 GB laptop thought 1,441 tokens (16.6 s) over the title before the first real
   turn could start. An effort set with "Use for other apps too" still turns thinking on.
+- **Reading an agent's prompt start when the server starts (opt-in).** After a restart an agent's first request
+  reads its whole prompt again. Claude Code's was 17,085 tokens in a test (9.9 s with Qwen3.6 on an 8 GB laptop),
+  and 14,504 of them were the system prompt and the tool list, which every session in the same folder sends again.
+  `"warm_start": true` in `strata-<model>.json` keeps the first turn of the last request with tools (the system
+  prompt with the tools, when that is 2,048 tokens or more) in `strata-<model>.warm-start` next to the config, and
+  reads it when the server starts: 8 s for those 14,504 tokens. Claude Code's first request then read 2,581 tokens
+  in 2.9 s. A request that comes in during that read stops it and goes first (one sent 3 s after the start waited
+  0.5 s), and the part read stays cached. It is off by default because the read keeps the GPU busy at every start,
+  also when no agent comes.
 - **Streaming.** With `"stream": true` everything arrives as it is made: the thinking, the answer, and tool calls
   (the tool's name first, then its arguments piece by piece, like OpenAI and Anthropic do). While the model reads a
   long prompt the stream sends keep-alives, so agents do not time out; the server window prints progress every

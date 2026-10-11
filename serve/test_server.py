@@ -1657,6 +1657,36 @@ class SharedPrefix(unittest.TestCase):
         self.assertEqual(ids, self.svc.prepare(self.MSGS, None, {}, 16)[0])
 
 
+class SamplingEngine(MockEngine):
+    """Keeps every call's prompt, max_new and sampling (a warm read's too)."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.calls = []
+
+    def generate(self, ids, max_new, sampling, cancel, embeddings=None):
+        self.calls.append((list(ids), max_new, dict(sampling or {})))
+        yield from super().generate(ids, max_new, sampling, cancel, embeddings)
+
+
+class SlowWarmEngine(SamplingEngine):
+    """A warm read (one token) that takes up to 20 s unless it is stopped."""
+
+    def generate(self, ids, max_new, sampling, cancel, embeddings=None):
+        t0 = time.monotonic()
+        while max_new == 1 and time.monotonic() - t0 < 20:
+            if cancel.is_set():
+                return
+            time.sleep(0.02)
+        yield from super().generate(ids, max_new, sampling, cancel, embeddings)
+
+
+def join_warm_read():
+    for t in threading.enumerate():
+        if t.name == "warm-start":
+            t.join(30)
+
+
 class LastTurn(unittest.TestCase):
     """strata-poly keeps a checkpoint where the prompt's last turn begins (the GEN line's turn_at): the chat's next
     request shares the prompt up to there, whatever its template writes for this reply (some drop the thinking)."""
@@ -1681,6 +1711,90 @@ class LastTurn(unittest.TestCase):
         self.assertEqual(self.engine.turn_key(self.tok.encode("plain text")), "")
         ids = self.svc.encode_prompt(self.MSGS, None, {})
         self.assertEqual(StrataEngine("missing-executable", [], lazy=True).turn_key(ids), "")   # no Service's tokens
+
+
+class WarmStart(unittest.TestCase):
+    """Opt-in "warm_start": the first turn of the last long prompt with tools (an agent's system prompt) is kept
+    next to the config and read when the server starts again; a request that comes meanwhile stops that read."""
+
+    TOOLS = ToolCallTerminators.SCHEMA
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.path = self.dir / "strata-m.warm-start"
+        self.tok = ByteTokenizer()
+        self.engine = SamplingEngine(self.tok, "ok", max_context=1 << 20)
+        self.svc = self.service(self.engine)
+
+    def service(self, engine):
+        svc = Service(engine, self.tok, ChatTemplate(ROOT / "serve/chat_template.jinja"))
+        svc.config_path = str(self.dir / "strata-m.json")
+        svc.warm_start = True
+        return svc
+
+    def prompt(self, system):
+        msgs = [{"role": "system", "content": system}, {"role": "user", "content": "hi"}]
+        return self.svc.encode_prompt(msgs, self.TOOLS, {})
+
+    def ask(self, ids, tools=TOOLS):
+        list(self.svc.run(ids, False, tools, 4, {}, threading.Event()))
+
+    def test_keeps_the_first_turn(self):
+        ids = self.prompt("S" * 3000)
+        self.ask(ids)
+        kept = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(ids[:len(kept)], kept)
+        self.assertTrue(self.tok.decode(ids[len(kept):]).startswith("<|im_start|>user\nhi"))
+        self.path.unlink()
+        self.ask(ids[:-1] + self.tok.encode("more"))            # the same start: not written again
+        self.assertFalse(self.path.exists())
+        ids = self.prompt("T" * 3000)
+        self.ask(ids)
+        new = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertNotEqual(new, kept)
+        self.assertEqual(ids[:len(new)], new)
+
+    def test_what_is_not_kept(self):
+        self.ask(self.prompt("S" * 100))                        # short
+        self.ask(self.prompt("S" * 3000), tools=None)           # no tools
+        self.svc.warm_start = False
+        self.ask(self.prompt("T" * 3000))                       # off
+        self.assertFalse(self.path.exists())
+
+    def test_a_new_server_reads_it(self):
+        self.ask(self.prompt("S" * 3000))
+        kept = json.loads(self.path.read_text(encoding="utf-8"))
+        svc = self.service(self.engine)
+        self.engine.calls.clear()
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            svc.start_warm()
+            join_warm_read()
+        self.assertEqual([(ids, n) for ids, n, _ in self.engine.calls], [(kept, 1)])
+        self.assertIn(f"read {len(kept)} tokens", out.getvalue())
+
+    def test_a_request_goes_first(self):
+        self.path.write_text(json.dumps(list(range(3000))), encoding="utf-8")
+        svc = self.service(SlowWarmEngine(self.tok, "ok", max_context=1 << 20))
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            svc.start_warm()
+            t0 = time.monotonic()
+            list(svc.run(self.tok.encode("hi"), False, None, 4, {}, threading.Event()))
+            took = time.monotonic() - t0
+            join_warm_read()
+        self.assertLess(took, 5)
+        self.assertIn("stopped for a request", out.getvalue())
+
+    def test_files_that_are_not_a_kept_start(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.svc.start_warm()                               # none yet: nothing to say
+            self.assertEqual(out.getvalue(), "")
+            for bad in ("{", json.dumps({"tokens": [1] * 3000}), json.dumps([1, 2]), json.dumps([-1] * 3000),
+                        json.dumps(["1"] * 3000), json.dumps([True] * 3000)):
+                self.path.write_text(bad, encoding="utf-8")
+                self.svc.start_warm()
+        join_warm_read()
+        self.assertEqual(self.engine.calls, [])
 
 
 class GpuChoice(unittest.TestCase):
