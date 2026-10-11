@@ -741,6 +741,8 @@ void usage() {
                  "                         131072 for Qwen3.6 and Ornith, all of it for the others; 0 = all)\n"
                  "  --no-graphs            launch a token's kernels one by one (default: a layer's are recorded once\n"
                  "                         as a CUDA graph and replayed)\n"
+                 "  --kv-whole             give the attention caches VRAM for the whole context at load (default: as\n"
+                 "                         the conversation grows, the expert cache having the rest until then)\n"
                  "  --expert-swaps N       while an answer is written, up to N experts it keeps using are on their way\n"
                  "                         into VRAM, in place of cached ones it uses less (default 64, 0 = the cache\n"
                  "                         stays as it was loaded)\n"
@@ -810,6 +812,7 @@ int main(int argc, char** argv) {
         else if (a == "--no-gpu-experts") o.gpu_experts = false;
         else if (a == "--any-node") o.stay_near = false;
         else if (a == "--no-graphs") o.graphs = false;
+        else if (a == "--kv-whole") o.kv_grow = false;
         else if (a == "--window") o.window = std::atoi(val());
         else if (a == "--lookup") lookup = std::atoi(val());
         else if (a == "--no-draft") o.draft = false;

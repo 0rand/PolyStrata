@@ -119,8 +119,7 @@ int Qwen35::widest() const { return std::max(d_inner_, n_head_ * head_dim_); }
 // The attention layers' caches, and each recurrent layer's convolution and delta-rule state in state_.
 void Qwen35::alloc_caches() {
     const size_t past_n = size_t(3) * conv_dim_, s_n = size_t(v_heads_) * s_dim_ * s_dim_;
-    const size_t rows_n = (size_t) opt_.max_context * n_kv_ * head_dim_;
-    uint16_t* kv = (uint16_t*) dmalloc(size_t(n_attn_) * 2 * rows_n * sizeof(uint16_t), "the attention cache");
+    const size_t row = (size_t) n_kv_ * head_dim_ * sizeof(uint16_t);
     float* st = state_;
     for (Block& B : blocks_) {
         if (B.gdn) {
@@ -129,10 +128,8 @@ void Qwen35::alloc_caches() {
             B.s = st;
             st += s_n;
         } else {
-            B.keys = kv;
-            kv += rows_n;
-            B.vals = kv;
-            kv += rows_n;
+            B.keys = (uint16_t*) kv_alloc(row, 1);
+            B.vals = (uint16_t*) kv_alloc(row, 1);
         }
     }
     chunk_ = (int) std::clamp<size_t>(kScoreFloats / ((size_t) n_head_ * opt_.max_context), 1, (size_t) rows_);
@@ -190,6 +187,7 @@ void Qwen35::save_rows(int64_t first, int64_t n, uint8_t* dst) {
 void Qwen35::load_rows(const uint8_t* src, int64_t from, int64_t count, int64_t first, int64_t n) {
     if (from < 0 || first < from || n < 0 || first + n > from + count || first + n > opt_.max_context)
         throw std::logic_error("load_rows: the rows are outside what was saved");
+    cover(first + n);
     ck(cudaStreamSynchronize(cs(st_)), "load rows");
     const size_t row = (size_t) n_kv_ * head_dim_ * sizeof(uint16_t), at = (size_t) first * row, bytes = (size_t) n * row;
     const size_t skip = (size_t) (first - from) * row, all = (size_t) count * row;

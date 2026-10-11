@@ -244,15 +244,21 @@ int Gemma4::widest() const {
 void Gemma4::alloc_caches() {
     ring_ = std::min(opt_.max_context, window_ + rows_);
     keep_ = std::min(window_, ring_);
-    size_t all = 0;
-    for (const Block& B : blocks_) all += 2 * (size_t) (B.swa ? ring_ : opt_.max_context) * B.n_kv * B.dim;
-    uint16_t* kv = (uint16_t*) dmalloc(all * sizeof(uint16_t), "the attention cache");
+    size_t rings = 0;   // a window layer's rows are a ring, whatever the sequence's length
+    for (const Block& B : blocks_)
+        if (B.swa) rings += 2 * (size_t) ring_ * B.n_kv * B.dim;
+    uint16_t* kv = rings ? (uint16_t*) dmalloc(rings * sizeof(uint16_t), "the attention cache") : nullptr;
     for (Block& B : blocks_) {
-        const size_t rows_n = (size_t) (B.swa ? ring_ : opt_.max_context) * B.n_kv * B.dim;
-        B.keys = kv;
-        kv += rows_n;
-        B.vals = kv;
-        kv += rows_n;
+        const size_t row = (size_t) B.n_kv * B.dim;
+        if (B.swa) {
+            B.keys = kv;
+            kv += ring_ * row;
+            B.vals = kv;
+            kv += ring_ * row;
+        } else {
+            B.keys = (uint16_t*) kv_alloc(row * sizeof(uint16_t), 1);
+            B.vals = (uint16_t*) kv_alloc(row * sizeof(uint16_t), 1);
+        }
     }
     chunk_ = (int) std::clamp<size_t>(kScoreFloats / ((size_t) n_head_ * opt_.max_context), 1, (size_t) rows_);
 }
@@ -307,6 +313,7 @@ void Gemma4::save_rows(int64_t first, int64_t n, uint8_t* dst) {
 void Gemma4::load_rows(const uint8_t* src, int64_t from, int64_t count, int64_t first, int64_t n) {
     if (from < 0 || first < from || n < 0 || first + n > from + count || first + n > opt_.max_context)
         throw std::logic_error("load_rows: the rows are outside what was saved");
+    cover(first + n);
     ck(cudaStreamSynchronize(cs(st_)), "load rows");
     for (const Block& B : blocks_) {
         const size_t row = (size_t) B.n_kv * B.dim * sizeof(uint16_t), bytes = (size_t) n * row;

@@ -291,20 +291,16 @@ int Glm5Next::widest() const {
 // is loaded (load_extra()), so a ring of rows_ + kpool rows holds the rows of the pool the next call fills.
 void Glm5Next::alloc_caches() {
     const size_t conv_n = size_t(3) * d_inner_ * (kConv - 1), s_n = size_t(n_head_) * kda_dim_ * kda_dim_;
-    const size_t ctx = (size_t) opt_.max_context, lat_n = ctx * kv_rank_;
     ring_ = rows_ + kpool_;
-    const size_t pool_n = ctx / kpool_ * idx_dim_, ring_n = (size_t) ring_ * 2 * idx_dim_;
-    uint16_t* lat = (uint16_t*) dmalloc(n_dsa_ * lat_n * sizeof(uint16_t), "the attention cache");
-    float* idx = (float*) dmalloc(n_dsa_ * (pool_n + ring_n) * sizeof(float), "the indexer cache");
+    const size_t ring_n = (size_t) ring_ * 2 * idx_dim_;
+    float* ring = (float*) dmalloc(n_dsa_ * ring_n * sizeof(float), "the indexer cache");
     float* st = state_;
     for (Block& B : blocks_) {
         if (B.dsa) {
-            B.lat = lat;
-            lat += lat_n;
-            B.pool = idx;
-            idx += pool_n;
-            B.ring = idx;
-            idx += ring_n;
+            B.lat = (uint16_t*) kv_alloc((size_t) kv_rank_ * sizeof(uint16_t), 1);
+            B.pool = (float*) kv_alloc((size_t) idx_dim_ * sizeof(float), kpool_);
+            B.ring = ring;
+            ring += ring_n;
         } else {
             B.conv = st;
             st += conv_n;
@@ -384,6 +380,7 @@ void Glm5Next::save_rows(int64_t first, int64_t n, uint8_t* dst) {
 void Glm5Next::load_rows(const uint8_t* src, int64_t from, int64_t count, int64_t first, int64_t n) {
     if (from < 0 || first < from || n < 0 || first + n > from + count || first + n > opt_.max_context)
         throw std::logic_error("load_rows: the rows are outside what was saved");
+    cover(first + n);
     ck(cudaStreamSynchronize(cs(st_)), "load rows");
     const size_t lat = (size_t) kv_rank_ * sizeof(uint16_t), key = (size_t) idx_dim_ * sizeof(float);
     const size_t at = (size_t) first, rows = (size_t) n, skip = (size_t) (first - from), all = (size_t) count;

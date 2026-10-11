@@ -57,6 +57,12 @@ constexpr double kWayWeight = 0.125, kWayBehind = 0.5;
 // so a longer one takes no more VRAM than that, and keep() puts up to two right tokens through the layers again.
 constexpr int kSnapPlaces = 3;
 
+// The attention caches grow with the sequence (Engine::cover()): a call that would write past the rows they have
+// gives them VRAM for rows kKvGrow at a time, kKvAhead past the call, and the expert cache gives that up in pieces
+// of kArenaPiece.
+constexpr int64_t kKvGrow = 4096, kKvAhead = 1024;
+constexpr size_t kArenaPiece = size_t(64) << 20;
+
 using Clock = std::chrono::steady_clock;
 
 inline double ms_since(Clock::time_point t) {

@@ -51,6 +51,8 @@ struct Options {
                                   ///< to the slot of one the answer uses less; 0: the cache stays as it was loaded
     bool stay_near = true;        ///< with several NUMA nodes, keep the CPU threads on the one that holds the experts
     bool graphs = true;           ///< a token's fixed launches are recorded once, a CUDA graph a layer, and replayed
+    bool kv_grow = true;          ///< the attention caches get VRAM as the sequence grows, where the card can map it
+                                  ///< so; false: for the whole context at load, as the expert cache gets the rest
     int window = 0;               ///< the most tokens window() takes: the known one and guesses after it; 1: none;
                                   ///< 0: 8, or 4 where every guess keeps a copy of the recurrent state
     bool draft = true;            ///< run the block that guesses ahead, when there is one and window is above 1
@@ -364,6 +366,29 @@ protected:
     int room_key(int n) const;
     void* dmalloc(size_t bytes, const char* what);
     void* hmalloc(size_t bytes, const char* what);
+    /// An attention cache for alloc_caches(): `bytes` for every `per` rows, with addresses for the whole context
+    /// and VRAM for the rows the sequence has reached (cover()).
+    void* kv_alloc(size_t bytes, int per);
+    /// VRAM in every attention cache for the rows below `end`, before a call writes them.
+    void cover(int64_t end);
+
+    // VRAM mapped onto addresses reserved for the most it can be, a piece at a time (CUDA's virtual memory
+    // management): it grows and shrinks at its end and keeps its address, which recorded launches hold.
+    struct Mapped {
+        unsigned long long base = 0;   ///< a CUdeviceptr
+        size_t reserved = 0, mapped = 0;
+        std::vector<std::pair<unsigned long long, size_t>> pieces;   ///< allocation handles and their bytes, in order
+    };
+    struct Kv : Mapped {
+        size_t bytes = 0;   ///< for every `per` rows
+        int per = 1;
+    };
+    void vmm_reserve(Mapped& m, size_t bytes);
+    void vmm_map(Mapped& m, size_t bytes, size_t piece, const char* what);
+    void vmm_unmap(Mapped& m, size_t bytes);
+    void vmm_free(Mapped& m);
+    void shrink_cache(size_t bytes);
+    void settle_swaps();
 
     Options opt_;
     std::unique_ptr<Shards> gg_;
@@ -422,6 +447,13 @@ protected:
     size_t dense_bytes_ = 0, dense_at_ = 0;
     uint8_t* exp_ = nullptr;     ///< the routed experts' arena
     size_t exp_at_ = 0;
+    Mapped arena_;               ///< its VRAM, when the card maps VRAM a piece at a time
+    bool vmm_ = false;           ///< it does; without that every cache is as large as it can get from the start
+    int device_ = 0;
+    size_t grain_ = 0;           ///< what the card maps VRAM in
+    std::vector<Kv> kv_;         ///< the attention caches that grow with the sequence
+    int64_t kv_rows_ = 0;        ///< the rows they have VRAM for
+    size_t budget_ = 0;          ///< their VRAM and the expert cache's together, as the cache was filled
     int asked_reserve_mib_ = -1; ///< Options::vram_reserve_mib as load() got it
     int reserve_mib_ = 0;        ///< what the cache was sized to leave free
     int full_cached_ = 0;        ///< the cache as load() filled it: its experts and their bytes

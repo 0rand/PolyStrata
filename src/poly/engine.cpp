@@ -12,6 +12,7 @@
 
 #include "ggml.h"
 
+#include <cuda.h>
 #include <cuda_runtime.h>
 
 #include <algorithm>
@@ -175,6 +176,15 @@ void read_profile(const std::string& path, int n_layer, int n_expert, std::vecto
     std::fclose(f);
 }
 
+void cu_ck(CUresult r, const char* what) {
+    if (r == CUDA_SUCCESS) return;
+    const char* s = nullptr;
+    cuGetErrorString(r, &s);
+    throw std::runtime_error(std::string(what) + ": " + (s ? s : "a CUDA driver error"));
+}
+
+size_t up_to(size_t n, size_t grain) { return (n + grain - 1) / grain * grain; }
+
 // The largest of n values, as eight maxima side by side: one best-so-far is a chain every compare waits on, and
 // a vocabulary is 150,000 values.
 constexpr int kLanes = 8;
@@ -223,6 +233,8 @@ Engine::~Engine() {
     workers_.reset();
     mmq_.reset();
     for (void* p : dev_allocs_) cudaFree(p);
+    for (Kv& k : kv_) vmm_free(k);
+    vmm_free(arena_);
     for (void* p : host_allocs_) cudaFreeHost(p);
     for (void* e : {ev_stage_[0], ev_stage_[1], ev_ahead_, ev_free_, ev_in_[0], ev_in_[1], ev_out_[0], ev_out_[1]})
         if (e) cudaEventDestroy((cudaEvent_t) e);
@@ -253,6 +265,171 @@ void* Engine::hmalloc(size_t bytes, const char* what) {
     ck(cudaMallocHost(&p, std::max<size_t>(bytes, 256)), what);
     host_allocs_.push_back(p);
     return p;
+}
+
+void Engine::vmm_reserve(Mapped& m, size_t bytes) {
+    CUdeviceptr p = 0;
+    m.reserved = up_to(std::max<size_t>(bytes, 1), grain_);
+    cu_ck(cuMemAddressReserve(&p, m.reserved, 0, 0, 0), "reserving addresses for VRAM");
+    m.base = p;
+}
+
+// VRAM for the first `bytes` of m, in pieces of at most `piece` bytes.  Throws std::runtime_error.
+void Engine::vmm_map(Mapped& m, size_t bytes, size_t piece, const char* what) {
+    bytes = std::min(up_to(bytes, grain_), m.reserved);
+    CUmemAllocationProp prop = {};
+    prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+    prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+    prop.location.id = device_;
+    CUmemAccessDesc access = {};
+    access.location = prop.location;
+    access.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+    piece = std::max(grain_, piece / grain_ * grain_);
+    while (m.mapped < bytes) {
+        const size_t n = std::min(bytes - m.mapped, piece);
+        CUmemGenericAllocationHandle h = 0;
+        if (cuMemCreate(&h, n, &prop, 0) != CUDA_SUCCESS)
+            throw std::runtime_error("no VRAM for " + std::string(what) + " (" + std::to_string(n >> 20) +
+                                     " MiB more)");
+        const CUdeviceptr at = m.base + m.mapped;
+        const CUresult mapped = cuMemMap(at, n, 0, h, 0);
+        if (mapped != CUDA_SUCCESS) cuMemRelease(h);
+        cu_ck(mapped, "mapping VRAM");
+        m.pieces.emplace_back(h, n);
+        m.mapped += n;
+        cu_ck(cuMemSetAccess(at, n, &access, 1), "mapping VRAM");
+    }
+}
+
+// Gives back the pieces of m that lie past its first `bytes`.  The card must be done with them.
+void Engine::vmm_unmap(Mapped& m, size_t bytes) {
+    while (!m.pieces.empty() && m.mapped - m.pieces.back().second >= bytes) {
+        const auto [h, n] = m.pieces.back();
+        m.mapped -= n;
+        m.pieces.pop_back();
+        cu_ck(cuMemUnmap(m.base + m.mapped, n), "unmapping VRAM");
+        cu_ck(cuMemRelease(h), "unmapping VRAM");
+    }
+}
+
+// For the destructor: what is left of m, and its addresses, without throwing.
+void Engine::vmm_free(Mapped& m) {
+    for (; !m.pieces.empty(); m.pieces.pop_back()) {
+        m.mapped -= m.pieces.back().second;
+        cuMemUnmap(m.base + m.mapped, m.pieces.back().second);
+        cuMemRelease(m.pieces.back().first);
+    }
+    if (m.base) cuMemAddressFree(m.base, m.reserved);
+    m.base = 0;
+}
+
+void* Engine::kv_alloc(size_t bytes, int per) {
+    const size_t all = (size_t) ((opt_.max_context + per - 1) / per) * bytes;
+    if (!vmm_) return dmalloc(all, "the attention cache");
+    Kv k;
+    k.bytes = bytes;
+    k.per = per;
+    vmm_reserve(k, all);
+    kv_.push_back(std::move(k));
+    return (void*) kv_.back().base;
+}
+
+// The attention caches' VRAM for the rows below `end`: rows kKvGrow at a time, kKvAhead more for the answer to go
+// on.  The expert cache gives it up (shrink_cache()), as if the rows had been there when it was filled: the
+// reserve stays for what is recorded later.  A quarter of the reserve stays free whatever else took VRAM since
+// (mind_vram()).
+void Engine::cover(int64_t end) {
+    if (kv_.empty() || end <= kv_rows_) return;
+    const int64_t rows = std::min<int64_t>(opt_.max_context, (end + kKvAhead + kKvGrow - 1) / kKvGrow * kKvGrow);
+    const auto size = [rows](const Kv& k) { return (size_t) ((rows + k.per - 1) / k.per) * k.bytes; };
+    size_t more = 0, held = arena_.mapped;
+    for (const Kv& k : kv_) {
+        more += std::min(up_to(size(k), grain_), k.reserved) - k.mapped;
+        held += k.mapped;
+    }
+    if (exp_) {
+        size_t free_b = 0, total_b = 0;
+        ck(cudaMemGetInfo(&free_b, &total_b), "cudaMemGetInfo");
+        const size_t quarter = (size_t(std::max(reserve_mib_, 0)) << 20) / 4;
+        size_t cut = held + more > budget_ ? held + more - budget_ : 0;
+        if (free_b < more + quarter) cut = std::max(cut, more + quarter - free_b);
+        if (cut) shrink_cache(cut);
+    }
+    for (Kv& k : kv_) vmm_map(k, size(k), SIZE_MAX, "the attention cache");
+    kv_rows_ = rows;
+}
+
+// Every expert on its way into the cache arrives and takes its slot.
+void Engine::settle_swaps() {
+    if (n_swap_ == 0) return;
+    const auto failed = [&] {
+        std::lock_guard<std::mutex> l(swap_m_);
+        return !swap_error_.empty();
+    };
+    for (int j = 0; j < n_swap_; ++j)
+        while (swap_[(size_t) j].at.load() == Swap::kAsked && !failed()) std::this_thread::yield();
+    if (failed()) throw std::runtime_error("expert upload: " + swap_error_);
+    ck(cudaStreamSynchronize(cs(swap_st_)), "expert upload");
+    follow(0);
+}
+
+// The expert cache gives up `bytes` or a little more from its end, and loads nothing again: the experts whose
+// slots lie there and that were used more than cached ones before the cut take those ones' slots, as follow()
+// ranks them, and the others leave the cache.
+void Engine::shrink_cache(size_t bytes) {
+    size_t cut = arena_.mapped;
+    for (size_t i = arena_.pieces.size(); i > 0 && arena_.mapped - cut < bytes; --i) cut -= arena_.pieces[i - 1].second;
+    settle_swaps();
+    ck(cudaStreamSynchronize(cs(st_)), "the expert cache");
+    const size_t ne = (size_t) n_expert_, end = cut > kTail ? cut - kTail : 0;   // kTail stays past the last slot
+    struct Held {
+        float recent;
+        int64_t prior;
+        int il, e;
+    };
+    const auto held = [&](int il, int e) {
+        const size_t i = (size_t) il * ne + (size_t) e;
+        return Held{recent_.empty() ? 0.f : recent_[i], (prior_.empty() ? 0 : prior_[i]) + use_[i], il, e};
+    };
+    const auto more = [](const Held& a, const Held& b) {
+        return a.recent != b.recent ? a.recent > b.recent : a.prior > b.prior;
+    };
+    std::vector<Held> past;
+    std::vector<std::vector<Held>> low((size_t) n_trade_);   // the cached ones before the cut, by slot size
+    for (int il = 0; il < (int) layers_.size(); ++il) {
+        const Layer& L = layers_[(size_t) il];
+        if (L.trade < 0) continue;
+        for (int e = 0; e < n_expert_; ++e) {
+            const uint8_t* s = L.slot[(size_t) e];
+            if (!s) continue;
+            if ((size_t) (s - exp_) + L.slot_bytes > end) past.push_back(held(il, e));
+            else low[(size_t) L.trade].push_back(held(il, e));
+        }
+    }
+    std::sort(past.begin(), past.end(), more);
+    for (std::vector<Held>& l : low) std::sort(l.begin(), l.end(), [&](const Held& a, const Held& b) { return more(b, a); });
+    std::vector<size_t> next((size_t) n_trade_, 0);
+    for (const Held& x : past) {
+        const Layer& L = layers_[(size_t) x.il];
+        uint8_t*& from = layers_[(size_t) x.il].slot[(size_t) x.e];
+        const std::vector<Held>& l = low[(size_t) L.trade];
+        size_t& k = next[(size_t) L.trade];
+        if (k < l.size() && more(x, l[k])) {
+            uint8_t*& to = layers_[(size_t) l[k].il].slot[(size_t) l[k].e];
+            ck(cudaMemcpyAsync(to, from, L.slot_bytes, cudaMemcpyDeviceToDevice, cs(st_)), "the expert cache");
+            from = to;
+            to = nullptr;
+            ++k;
+        } else {
+            from = nullptr;
+        }
+        --cached_;
+    }
+    ck(cudaStreamSynchronize(cs(st_)), "the expert cache");
+    vmm_unmap(arena_, cut);
+    if (cut > kTail) ck(cudaMemset(exp_ + end, 0, kTail), "the expert cache");
+    exp_at_ = std::min(exp_at_, end);
+    staged_il_ = -1;
 }
 
 float* Engine::fbuf(size_t n) {
@@ -552,7 +729,15 @@ void Engine::fill_expert_cache() {
     // sized again (resize_cache()), it is no larger than load() made it
     const size_t arena = std::min({all, free_b - reserve, full_bytes_ > 0 ? full_bytes_ : all});
     if (arena == 0) return;
-    exp_ = (uint8_t*) dmalloc(arena + 256, "the expert cache");
+    if (vmm_) {   // in pieces, so that it can give some up to the attention caches (shrink_cache())
+        if (!arena_.base) vmm_reserve(arena_, arena + 256);
+        vmm_map(arena_, arena + 256, kArenaPiece, "the expert cache");
+        exp_ = (uint8_t*) arena_.base;
+        budget_ = free_b - reserve;   // when it holds every expert, what is left over goes to the rows first
+        for (const Kv& k : kv_) budget_ += k.mapped;
+    } else {
+        exp_ = (uint8_t*) dmalloc(arena + 256, "the expert cache");
+    }
     ck(cudaMemset(exp_, 0, arena + 256), "the expert cache");   // the slots' tails stay zero (kTail)
     // Which experts is by value; where they go is by layer, a layer's side by side in the experts' order.
     std::vector<Cand> taken;
@@ -619,7 +804,10 @@ void Engine::resize_cache(int mib) {
     staged_il_ = -1;
     cached_ = 0;
     exp_at_ = 0;
-    if (exp_) {
+    if (exp_ && vmm_) {
+        vmm_unmap(arena_, 0);
+        exp_ = nullptr;
+    } else if (exp_) {
         dev_allocs_.erase(std::find(dev_allocs_.begin(), dev_allocs_.end(), (void*) exp_));
         ck(cudaFree(exp_), "resize");
         exp_ = nullptr;
@@ -814,6 +1002,20 @@ void Engine::load(const Options& o) {
     }
     ev_ = ev_row_[0];
     blas_ = blas_create(st_);
+    // The card maps VRAM onto reserved addresses a piece at a time: the attention caches grow with the sequence,
+    // and the expert cache has what a short one leaves (cover()).
+    ck(cudaGetDevice(&device_), "cudaGetDevice");
+    CUdevice dev = 0;
+    int vmm = 0;
+    if (opt_.kv_grow && cuDeviceGet(&dev, device_) == CUDA_SUCCESS &&
+        cuDeviceGetAttribute(&vmm, CU_DEVICE_ATTRIBUTE_VIRTUAL_MEMORY_MANAGEMENT_SUPPORTED, dev) == CUDA_SUCCESS && vmm) {
+        CUmemAllocationProp prop = {};
+        prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+        prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+        prop.location.id = device_;
+        vmm_ = cuMemGetAllocationGranularity(&grain_, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM) == CUDA_SUCCESS &&
+               grain_ > 0;
+    }
 
     // the token table stays in the file, a row a token, and embed() reads a row in whatever type it has
     const TensorInfo* te = gg_->find("token_embd.weight");
@@ -939,6 +1141,7 @@ void Engine::alloc() {
     wlogits_ = (float*) dmalloc(size_t(opt_.window) * n_vocab_ * sizeof(float), "scratch");
     h_wlogits_ = (float*) hmalloc(size_t(opt_.window) * n_vocab_ * sizeof(float), "pinned memory");
     alloc_caches();
+    cover(1);   // a short conversation's rows, before the expert cache is sized
 
     // A prompt batch runs its routed experts through MMQ when the card has a tile for each of their types.
     // The model's layers: the draft block's experts never run a batch at a time.
@@ -1540,6 +1743,7 @@ void Engine::run(const int32_t* tokens, int n) {
     if (n < 1 || n > rows_) throw std::logic_error("eval takes 1 to max_rows() tokens");
     if (pos_ + n > opt_.max_context)
         throw std::runtime_error("the context is full (" + std::to_string(opt_.max_context) + " tokens)");
+    cover(pos_ + n);
 
     // h_r_ and h_cpu_ may still be the source of the previous call's copies
     ck(cudaStreamSynchronize(cs(st_)), "eval");
@@ -1783,6 +1987,7 @@ bool Engine::read(const int32_t* tokens, int n, const Mark* marks, int n_marks,
         k += ends;
     }
     const int n_calls = (int) calls_.size();
+    cover(pos_ + n);
     if (n_calls == 1 || !mmq_ || cached_ == total_experts()) {
         for (int c = 0; c < n_calls; ++c) {
             const Call& call = calls_[(size_t) c];
@@ -2060,6 +2265,7 @@ int32_t Engine::draft(int32_t token, int i, float* prob) {
     if (!draft_) throw std::logic_error("draft: this model has no block that guesses ahead");
     if (token < 0 || token >= n_vocab_) throw std::runtime_error("a token id is outside the vocabulary");
     if (i < 0 || pos_ + i >= opt_.max_context) throw std::logic_error("draft: the position is outside the context");
+    cover(pos_ + i + 1);
     ck(cudaStreamSynchronize(cs(st_)), "draft");
     draft_step(token, i);
     // The guess and its probability are found on the card.  On the host a vocabulary's softmax takes up to 2 ms

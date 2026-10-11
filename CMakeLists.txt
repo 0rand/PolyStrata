@@ -1554,8 +1554,10 @@ if(STRATA_ENABLE_CUDA AND STRATA_NATIVE_EXPERTS AND NOT STRATA_ENABLE_HIP AND NO
                             src/poly/gemma4.cpp src/poly/cpu_experts.cpp src/poly/kernels.cu
                             src/core/conversation_memory.cpp)
   target_include_directories(strata-poly PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${_strata_gpu_include_directories})
+  # the driver's virtual memory calls: the attention caches grow with the conversation
   target_link_libraries(strata-poly PRIVATE strata_poly_mmq strata_kernels strata_spec ggml-cpu ggml-base
-                                           ${_strata_gpu_blas_target} ${_strata_gpu_runtime_target} Threads::Threads)
+                                           ${_strata_gpu_blas_target} ${_strata_gpu_runtime_target} CUDA::cuda_driver
+                                           Threads::Threads)
   # needs the model file, so it is run by hand: poly_expert_parity MODEL.gguf
   add_executable(poly_expert_parity src/poly/expert_parity.cpp src/poly/cpu_experts.cpp src/poly/kernels.cu)
   target_include_directories(poly_expert_parity PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
