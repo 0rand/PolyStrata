@@ -28,6 +28,9 @@ decoding, 64 tokens after five chat prompts, token by token. On the laptop, Qwen
 in [docs/BACKENDS.md](BACKENDS.md#how-each-backend-was-checked).
 Guessing tokens ahead does not change the answer: with every expert on the CPU, the tokens are the same with and
 without guesses.
+Those checks left out no experts. Setup starts Qwen3.6 with `--tail-skip 6`, which skips a few low-ranked
+experts that are not in VRAM and moves its answers a little; `STRATA_ROUTE_TAIL_SKIP=0` turns that off
+([measured](BACKENDS.md#what-was-tuned)).
 
 Every speed in the README says which machine, which file and which prompt, and the benchmark that produced it is in
 the repo, so you can run it on your own PC.

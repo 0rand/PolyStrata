@@ -140,6 +140,10 @@ class Main(unittest.TestCase):
                                      self.t / "models" / tag / more[0])
                 else:
                     self.assertNotIn("--draft-model", args)        # theirs is in the model's file
+                if family == "qwen36":                            # the others' answers move more (docs/BACKENDS.md)
+                    self.assertEqual(args[args.index("--tail-skip") + 1], "6")
+                else:
+                    self.assertNotIn("--tail-skip", args)
                 self.assertEqual(cfg["model_name"], f"{fam['name']}-{size.lower()}")
                 self.assertEqual(cfg["display_name"], f"{fam['title']} {size}")
                 self.assertEqual(Path(cfg["exe"]), self.t / setup.ENGINE_POLY_DIR / setup.POLY_EXE)

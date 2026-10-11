@@ -1477,6 +1477,40 @@ faster than setup's 13 in three rounds of four and no faster in the fourth: the 
 These eight were built and measured on Windows only, and GLM 5.3 Flash, whose attention has kernels of its own,
 was not run with them.
 
+The Strata project's 0.1.42 leaves out an expert outside VRAM when every token of a verify window routes it
+among its last three of ten (`STRATA_ROUTE_TAIL_SKIP=7`). strata-poly does the same with `--tail-skip N`: an
+expert outside VRAM that every token of a call ranks at place N+1 or later of its eight is not computed, and
+the others keep the weights the router gave them. A prompt's batches are not touched. It changes the answers,
+so it was measured on them, on the laptop with 1 GiB of VRAM left free: six prompts answered greedily for up
+to 400 tokens, every setting in turn, two rounds, each run a new engine from the same expert profile. The
+first round's answer with nothing left out was then written again under every setting with its tokens forced,
+and the 40 most likely tokens of each step compared with that answer's: the mean KL divergence, and how often
+the most likely token is the same. A second run with nothing left out gives the noise, since two runs with
+experts on the CPU do not write the same tokens.
+
+| Model | `--tail-skip` | Tokens/s, median | Against 0, median of 12 answers | KL | Same most likely token |
+| --- | --- | --- | --- | --- | --- |
+| Qwen3.6 UD-Q3_K_M | 0, a second run | 91.2 | | 0.0013 | 99.3% |
+| | 7 | 93.1 | x1.041, 10 faster | 0.0038 | 98.5% |
+| | 6 | 95.6 | x1.089, 12 faster | 0.0059 | 97.8% |
+| | 5 | 97.8 | x1.116, 12 faster | 0.0096 | 97.4% |
+| Ornith APEX-I-COMPACT | 0, a second run | 82.1 | | 0.0034 | 98.7% |
+| | 7 | 82.9 | x1.033, 11 faster | 0.0182 | 96.4% |
+| | 6 | 87.8 | x1.063, 11 faster | 0.0256 | 95.2% |
+| | 5 | 88.1 | x1.093, 11 faster | 0.0339 | 94.7% |
+| Gemma 4 UD-Q3_K_M | 0, a second run | 80.6 | | 0.0033 | 99.0% |
+| | 7 | 87.5 | x1.022, 8 faster | 0.0083 | 98.1% |
+| | 6 | 88.5 | x1.058, 9 faster | 0.0159 | 97.2% |
+| | 5 | 88.4 | x1.063, 9 faster | 0.0296 | 96.6% |
+
+The Strata project measured its default at a KL of 0.003 to 0.006 with the same most likely token 97.7% to
+98.2% of the time, for answers 13% to 16% faster. Qwen3.6 at 6 moves its answers about as much, and setup
+gives its three sizes `--tail-skip 6`. Ornith at 7 moves them five times its noise for 3%, and its answer
+to the story prompt by 0.059 to 0.091 at the three settings; Gemma 4 at 6 moves them five times its noise for 6%. Both stay
+at 0. `STRATA_ROUTE_TAIL_SKIP` in the environment is read over `--tail-skip`, and `=0` turns it off. With
+every expert in VRAM nothing is left out, so the RTX 5090 rows do not change. The other sizes of the three
+families were not measured.
+
 ## Adding a model of an architecture that is there
 
 Setup knows the files in the table above. Another file of one of these architectures runs after these steps:

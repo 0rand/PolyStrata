@@ -366,13 +366,14 @@ FAMILIES = {
     # "vision_vram_gb" is what it holds on the GPU once it has warmed up at 1,024 image tokens (measured there too).
     # A family's first size is the one setup takes on a PC with the RAM for it, the second the one it takes with
     # less, and the third is by name (poly_default()).  "windows": installed by setup and run there, on one PC.
-    # "ran_on_gb": the smallest card it has run on, 32 GB without the key.
+    # "ran_on_gb": the smallest card it has run on, 32 GB without the key.  "tail_skip": the engine's --tail-skip,
+    # for the family whose answers it moves no more than the Strata project's default moves its own (docs/BACKENDS.md).
     "qwen36": {"title": "Qwen3.6-35B-A3B", "by": "Qwen; quantized by Unsloth",
                "about": "on the strata-poly engine: one NVIDIA card, Linux or Windows; a 17 GB file, ~21 GB of RAM "
                         "beside an 8 GB card; a smaller and a larger size too",
                "hf": hf("unsloth/Qwen3.6-35B-A3B-MTP-GGUF"), "file": "Qwen3.6-35B-A3B-{q}.gguf", "shards": 1,
                "tag": "qwen36-", "name": "qwen3.6-35b-a3b", "engine": "poly", "vision": True, "experimental": True,
-               "windows": True, "ran_on_gb": 8,
+               "windows": True, "ran_on_gb": 8, "tail_skip": 6,
                "row_bytes": 26624, "mmproj_hf": hf("unsloth/Qwen3.6-35B-A3B-MTP-GGUF"), "mmproj": "mmproj-F16.gguf",
                "vision_gb": 0.9, "vision_vram_gb": 1.6,
                "models": {"UD-Q3_K_M": {"about": "3-bit experts (Unsloth Dynamic), its draft block in the file",
@@ -5463,6 +5464,8 @@ def poly_setup(a, family, gpu, hip, cuda_tk, multi, ram, data, elsewhere, port, 
         args += ["--vram-reserve-mib", str(a.vram_reserve_mib)]
         ok(f"VRAM kept free for other programs: {a.vram_reserve_mib} MiB (--vram-reserve-mib; the expert cache takes "
            "that much less)")
+    if fam.get("tail_skip"):
+        args += ["--tail-skip", str(fam["tail_skip"])]
     # The engine's own count is every logical CPU.  On a hybrid CPU that is the slowest: an efficiency core runs
     # an expert at half the speed, and a layer waits for its slowest part (hybrid_pool_workers()).
     cores = cpu_cores()
