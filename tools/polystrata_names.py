@@ -9,9 +9,9 @@ Strata. Run this after taking changes from it:
 
 It replaces the word Strata in the files a user reads or runs (documents, setup, the server, the web app, the
 tools and their tests) and nothing else; a second run changes nothing. It leaves alone the engines' sources and
-build files, the benchmark records, the paper, and the places where Strata means the project this one is built on
-(KEEP). To name that project in new text, link it, [Strata](https://github.com/Niko1221/Strata), or write
-"the Strata project".
+build files, the benchmark records, the paper, docs/FAQ.md (it is about both projects), and the places where
+Strata means the project this one is built on (KEEP). To name that project in new text, link it,
+[Strata](https://github.com/Niko1221/Strata), or write "the Strata project".
 """
 import re
 import subprocess
@@ -20,14 +20,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKIP = ("src/", "include/", "tests/", "cmake/", "third_party/", "bench/", "sycl/src/", "sycl/tools/", "tools/vision/",
-        "docs/paper/", "docs/COMMUNITY_BENCHMARKS.md", "tools/polystrata_names.py")
+        "docs/paper/", "docs/COMMUNITY_BENCHMARKS.md", "docs/FAQ.md", "tools/polystrata_names.py")
 KINDS = (".md", ".py", ".html", ".js", ".css", ".bat", ".sh", ".yml", ".yaml")
 NAMES = ("Dockerfile",)
 KEEP = "|".join((
     r"\[Strata\]\(https://github\.com/Niko1221/Strata", # a Markdown link to it
     r"Niko1221/Strata\">Strata",                        # an HTML link to it
     r"(?:Niko1221|eddoursul)/Strata",                   # their repositories, in an address or by name
-    r"[Tt]he Strata project|Strata 项目|Strata maintainers",
+    r"[Tt]he\s+Strata project|Strata 项目|Strata maintainers",
     r"Strata-Paper",                                    # the paper's file
     r"Strata\.Example",                                 # a host name a test spells in capitals
     r"class Strata\b|: Strata(?=[,)])|\bStrata\(",      # the MCP server's class
@@ -73,7 +73,7 @@ def main() -> int:
 def demo() -> None:
     same = ("https://github.com/Niko1221/Strata/releases", "[Strata](https://github.com/Niko1221/Strata) by",
             "StrataEngine", "PolyStrata", "paper/Strata-Paper.pdf", "class Strata:", "M.Strata(root)",
-            "strata: Strata)", "The Strata project's author",
+            "strata: Strata)", "The Strata project's author", "the\nStrata project's 0.1.41",
             '<a href="https://github.com/Niko1221/Strata">Strata</a>')
     for s in same:
         assert rename(s) == s, s
