@@ -21,6 +21,8 @@ protected:
     void begin_pass() override;
     void check_draft_block() override;
     size_t recurrent_floats() const override;
+    size_t extra_bytes() const override;
+    void load_extra(const uint8_t* src, int64_t pos) override;
     void save_layer(int il, int64_t pos, uint8_t* dst) override;
     void alloc_caches() override;
     void assign_scratch() override;
@@ -51,7 +53,8 @@ private:
         Dev q_a, q_a_norm, q_b, kv_a, kv_a_norm, k_b, v_b;
         Dev idx_k, idx_k_norm, idx_k_norm_b, idx_q_b, idx_proj, idx_gate, idx_ape;
         uint16_t* lat = nullptr;  ///< max_context * kv_rank, fp16
-        float* idx = nullptr;     ///< max_context * 3 * idx_dim
+        float* pool = nullptr;    ///< max_context / kpool * idx_dim: the indexer's pools (kernels::idx_store())
+        float* ring = nullptr;    ///< ring_ * 2 * idx_dim: its latest rows
         // dense FFN
         Dev ffn_gate, ffn_up, ffn_down;
         std::vector<float> probs_b;   ///< what the routing adds to each expert's gate before it picks
@@ -70,6 +73,8 @@ private:
     int idx_heads_ = 0, idx_dim_ = 0, idx_top_k_ = 0, kpool_ = 0;
     int sinkhorn_ = 0;
     int score_stride_ = 0, sel_stride_ = 0;   ///< one token's indexer scores, and its selected cache rows
+    int score_rows_ = 0;   ///< the tokens whose scores score_ holds at once
+    int ring_ = 0;   ///< the rows of a Block's ring: a call's and the pool before it
     int64_t gate_rank_ = 0;   ///< the widest low-rank gate projection of the KDA layers
     float hc_eps_ = 0, norm_eps_ = 0, kda_lb_ = 0, w_scale_ = 1;
     bool w_norm_ = false;
@@ -83,10 +88,6 @@ private:
           *iw_ = nullptr, *score_ = nullptr, *akeys_ = nullptr, *ascore_ = nullptr;
     size_t akeys_n_ = 0;   ///< floats in akeys_
     int32_t* sel_ = nullptr;
-
-    // pinned host buffers
-    float* h_score_ = nullptr;
-    int32_t* h_sel_ = nullptr;
 
 };
 

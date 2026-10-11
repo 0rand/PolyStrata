@@ -77,22 +77,24 @@ void dsa_attend(void* blas, const float* q, const uint16_t* cache, const int32_t
 void* blas_create(void* stream);
 void blas_destroy(void* blas);
 
-/// Indexer cache row: key (dim) | gate (dim) | pooled (dim), fp32.  Stores the tokens' keys and gates from row
-/// `pos`.
-void idx_store(const float* key, const float* gate, float* cache, int dim, int64_t pos, int rows, void* stream);
-/// For each of the rows from `pos` that ends a pool: pools the kpool rows ending there into the pooled part of
-/// that row.  ape: (dim, kpool).
-void idx_pool(float* cache, const float* ape, int dim, int kpool, int64_t pos, int rows, void* stream);
-/// For the tokens from position `pos`: score[p] = sum_h relu(q[h] . pooled(p)) * w[h] for the pools p that are
-/// complete at the token's position; pool p's key is in cache row kpool * p + kpool - 1.  A token's scores start
-/// score_stride apart.  w is the raw indexer_proj output; the 1/sqrt(dim * n_head) factor is applied here.
-void idx_score(const float* q, const float* w, const float* cache, float* score, int score_stride, int dim,
+/// The indexer's cache: a pool's key once its kpool rows are in, dim floats a pool in `pool`, and the latest rows'
+/// keys and gates in `ring`, key (dim) | gate (dim) a row, the row of position p at p % ring_rows.  fp32.
+/// Stores the tokens' keys and gates from position `pos`.
+void idx_store(const float* key, const float* gate, float* ring, int ring_rows, int dim, int64_t pos, int rows,
+               void* stream);
+/// For each of the positions from `pos` that ends a pool: the pool's key from its kpool rows.  ape: (dim, kpool).
+void idx_pool(const float* ring, int ring_rows, float* pool, const float* ape, int dim, int kpool, int64_t pos,
+              int rows, void* stream);
+/// For the tokens from position `pos`: score[p] = sum_h relu(q[h] . pool[p]) * w[h] for the pools p that are
+/// complete at the token's position.  A token's scores start score_stride apart.  w is the raw indexer_proj
+/// output; the 1/sqrt(dim * n_head) factor is applied here.
+void idx_score(const float* q, const float* w, const float* pool, float* score, int score_stride, int dim,
                int n_head, int kpool, int64_t pos, int rows, void* stream);
 /// idx_score() for a prompt batch: the products of the queries and the pools' keys through cuBLAS, as many tokens
 /// at a time as have theirs in the work_floats floats of `work`, n_head for each pool of the call's last token.
 /// A score has other last bits than idx_score()'s.  Throws std::runtime_error, and std::invalid_argument when
 /// work has no room for a token.
-void idx_score_batch(void* blas, const float* q, const float* w, const float* cache, float* score, int score_stride,
+void idx_score_batch(void* blas, const float* q, const float* w, const float* pool, float* score, int score_stride,
                      int dim, int n_head, int kpool, int64_t pos, int rows, float* work, size_t work_floats,
                      void* stream);
 /// For each of the tokens from position `pos`, from its scores: the n_top pools with the highest, the lower pool

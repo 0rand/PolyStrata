@@ -12,7 +12,6 @@
 #include <bit>
 #include <cmath>
 #include <cstring>
-#include <numeric>
 #include <stdexcept>
 
 namespace strata::poly {
@@ -20,6 +19,7 @@ namespace {
 
 constexpr int kHc = 4, kConv = 4;   // what kernels.cu is written for; checked at load
 constexpr int kAttnRows = 32;       // tokens one pass of the sparse attention takes; their keys are 4 MiB a token
+constexpr size_t kScoreBytes = size_t(128) << 20;   // a prompt batch's indexer scores at most: 1,024 tokens at 128K
 constexpr float kMinWeightSum = 6.103515625e-5f;   // the floor ggml's MoE graph puts under the gate sum
 
 // The model's GGUFs come out of more than one converter.  `name` is what the layout of neurall's llama.cpp fork
@@ -270,7 +270,7 @@ void Glm5Next::assign_scratch() {
     ig_ = fbuf(n * idx_dim_);
     iq_ = fbuf(n * idx_heads_ * idx_dim_);
     iw_ = fbuf(n * idx_heads_);
-    score_ = fbuf(n * score_stride_);
+    score_ = fbuf((size_t) score_rows_ * score_stride_);
     const size_t keys = (size_t) std::min(opt_.max_context, idx_top_k_ + kpool_ - 1);
     akeys_n_ = std::min(n, (size_t) kAttnRows) * keys * kv_rank_;
     akeys_ = fbuf(akeys_n_);
@@ -286,18 +286,25 @@ int Glm5Next::widest() const {
 }
 
 // The sparse layers' caches, and each recurrent layer's convolution and delta-rule state in state_.
+//
+// A call writes the indexer rows of [pos, pos + n), n <= rows_, and the next call starts after pos unless a state
+// is loaded (load_extra()), so a ring of rows_ + kpool rows holds the rows of the pool the next call fills.
 void Glm5Next::alloc_caches() {
     const size_t conv_n = size_t(3) * d_inner_ * (kConv - 1), s_n = size_t(n_head_) * kda_dim_ * kda_dim_;
-    const size_t ctx = (size_t) opt_.max_context, lat_n = ctx * kv_rank_, idx_n = ctx * 3 * idx_dim_;
+    const size_t ctx = (size_t) opt_.max_context, lat_n = ctx * kv_rank_;
+    ring_ = rows_ + kpool_;
+    const size_t pool_n = ctx / kpool_ * idx_dim_, ring_n = (size_t) ring_ * 2 * idx_dim_;
     uint16_t* lat = (uint16_t*) dmalloc(n_dsa_ * lat_n * sizeof(uint16_t), "the attention cache");
-    float* idx = (float*) dmalloc(n_dsa_ * idx_n * sizeof(float), "the indexer cache");
+    float* idx = (float*) dmalloc(n_dsa_ * (pool_n + ring_n) * sizeof(float), "the indexer cache");
     float* st = state_;
     for (Block& B : blocks_) {
         if (B.dsa) {
             B.lat = lat;
             lat += lat_n;
-            B.idx = idx;
-            idx += idx_n;
+            B.pool = idx;
+            idx += pool_n;
+            B.ring = idx;
+            idx += ring_n;
         } else {
             B.conv = st;
             st += conv_n;
@@ -307,39 +314,70 @@ void Glm5Next::alloc_caches() {
     }
 
     score_stride_ = opt_.max_context / kpool_ + 1;
+    score_rows_ = (int) std::clamp<size_t>(kScoreBytes / (score_stride_ * sizeof(float)), 1, (size_t) rows_);
     sel_stride_ = idx_top_k_ + kpool_;
     const size_t n = (size_t) rows_;
     sel_ = (int32_t*) dmalloc(n * sel_stride_ * sizeof(int32_t), "scratch");
-    h_score_ = (float*) hmalloc(n * score_stride_ * sizeof(float), "pinned memory");
-    h_sel_ = (int32_t*) hmalloc(n * sel_stride_ * sizeof(int32_t), "pinned memory");
+}
+
+// A sparse layer's part of a state: its indexer rows of the pool the position is in, which the ring no longer
+// has when the sequence comes back to that position.  kpool - 1 rows each, behind the recurrent state.
+size_t Glm5Next::extra_bytes() const { return (size_t) n_dsa_ * (kpool_ - 1) * 2 * idx_dim_ * sizeof(float); }
+
+void Glm5Next::load_extra(const uint8_t* src, int64_t pos) {
+    const size_t row = size_t(2) * idx_dim_ * sizeof(float);
+    for (const Block& B : blocks_) {
+        if (!B.dsa) continue;
+        for (int64_t p = pos - pos % kpool_; p < pos; ++p)
+            ck(cudaMemcpy(B.ring + (size_t) (p % ring_) * 2 * idx_dim_, src + (size_t) (p % kpool_) * row, row,
+                          cudaMemcpyHostToDevice),
+               "load state");
+        src += (size_t) (kpool_ - 1) * row;
+    }
 }
 
 // A recurrent layer's convolution and delta-rule state lie one behind the other in state_ (alloc_caches()).
-void Glm5Next::save_layer(int il, int64_t, uint8_t* dst) {
+void Glm5Next::save_layer(int il, int64_t pos, uint8_t* dst) {
     const Block& B = blocks_[(size_t) il];
-    if (!B.conv) return;
+    if (B.dsa) {
+        const size_t row = size_t(2) * idx_dim_ * sizeof(float), part = (size_t) (kpool_ - 1) * row;
+        dst += state_n_ * sizeof(float);
+        for (int j = 0; j < il; ++j) dst += blocks_[(size_t) j].dsa ? part : 0;
+        std::memset(dst, 0, part);
+        for (int64_t p = pos - pos % kpool_; p < pos; ++p)
+            ck(cudaMemcpy(dst + (size_t) (p % kpool_) * row, B.ring + (size_t) (p % ring_) * 2 * idx_dim_, row,
+                          cudaMemcpyDeviceToHost),
+               "save state");
+        return;
+    }
     const size_t n = size_t(3) * d_inner_ * (kConv - 1) + size_t(n_head_) * kda_dim_ * kda_dim_;
     ck(cudaMemcpy(dst + (size_t) (B.conv - state_) * sizeof(float), B.conv, n * sizeof(float),
                   cudaMemcpyDeviceToHost),
        "save state");
 }
 
+// A row: the latent the attention reads, and room for a pool's key, which the row that ends the pool has.
 size_t Glm5Next::row_bytes() const {
-    return (size_t) n_dsa_ * ((size_t) kv_rank_ * sizeof(uint16_t) + (size_t) 3 * idx_dim_ * sizeof(float));
+    return (size_t) n_dsa_ * ((size_t) kv_rank_ * sizeof(uint16_t) + (size_t) idx_dim_ * sizeof(float));
 }
 
 void Glm5Next::save_rows(int64_t first, int64_t n, uint8_t* dst) {
     if (first < 0 || n < 0 || first + n > opt_.max_context)
         throw std::logic_error("save_rows: the rows are outside the context");
     ck(cudaStreamSynchronize(cs(st_)), "save rows");
-    const size_t lat = (size_t) kv_rank_ * sizeof(uint16_t), idx = (size_t) 3 * idx_dim_ * sizeof(float);
+    const size_t lat = (size_t) kv_rank_ * sizeof(uint16_t), key = (size_t) idx_dim_ * sizeof(float);
     const size_t at = (size_t) first, rows = (size_t) n;
+    const int64_t p0 = first / kpool_, p1 = (first + n) / kpool_;   // the pools that end in these rows
     for (const Block& B : blocks_) {
         if (!B.dsa || rows == 0) continue;
         ck(cudaMemcpy(dst, (const uint8_t*) B.lat + at * lat, rows * lat, cudaMemcpyDeviceToHost), "save rows");
         dst += rows * lat;
-        ck(cudaMemcpy(dst, (const uint8_t*) B.idx + at * idx, rows * idx, cudaMemcpyDeviceToHost), "save rows");
-        dst += rows * idx;
+        std::memset(dst, 0, rows * key);
+        if (p1 > p0)
+            ck(cudaMemcpy2D(dst + (size_t) (p0 * kpool_ + kpool_ - 1 - first) * key, kpool_ * key,
+                            B.pool + (size_t) p0 * idx_dim_, key, key, (size_t) (p1 - p0), cudaMemcpyDeviceToHost),
+               "save rows");
+        dst += rows * key;
     }
 }
 
@@ -347,14 +385,19 @@ void Glm5Next::load_rows(const uint8_t* src, int64_t from, int64_t count, int64_
     if (from < 0 || first < from || n < 0 || first + n > from + count || first + n > opt_.max_context)
         throw std::logic_error("load_rows: the rows are outside what was saved");
     ck(cudaStreamSynchronize(cs(st_)), "load rows");
-    const size_t lat = (size_t) kv_rank_ * sizeof(uint16_t), idx = (size_t) 3 * idx_dim_ * sizeof(float);
+    const size_t lat = (size_t) kv_rank_ * sizeof(uint16_t), key = (size_t) idx_dim_ * sizeof(float);
     const size_t at = (size_t) first, rows = (size_t) n, skip = (size_t) (first - from), all = (size_t) count;
+    const int64_t p0 = first / kpool_, p1 = (first + n) / kpool_;
     for (const Block& B : blocks_) {
         if (!B.dsa || rows == 0) continue;
         ck(cudaMemcpy((uint8_t*) B.lat + at * lat, src + skip * lat, rows * lat, cudaMemcpyHostToDevice), "load rows");
         src += all * lat;
-        ck(cudaMemcpy((uint8_t*) B.idx + at * idx, src + skip * idx, rows * idx, cudaMemcpyHostToDevice), "load rows");
-        src += all * idx;
+        if (p1 > p0)
+            ck(cudaMemcpy2D(B.pool + (size_t) p0 * idx_dim_, key,
+                            src + (size_t) (p0 * kpool_ + kpool_ - 1 - from) * key, kpool_ * key, key,
+                            (size_t) (p1 - p0), cudaMemcpyHostToDevice),
+               "load rows");
+        src += all * key;
     }
 }
 
@@ -380,48 +423,31 @@ void Glm5Next::kda(Block& B, int n) {
 }
 
 // For the n tokens from row `first` of a call whose first token is at `at`: the n_top pools with the highest
-// indexer score, expanded to their rows, then the tail that is in no pool yet.  A few tokens' scores come to the
-// host for the selection, which costs a wait per layer; it only runs past top_k tokens.
+// indexer score, expanded to their rows, then the tail that is in no pool yet.  It only runs past top_k tokens.
 void Glm5Next::dsa_select(Block& B, int64_t at, int first, int n) {
     const int64_t pos = at + first;
     const int n_top = idx_top_k_ / kpool_;
     lin(B.idx_q_b, qr_ + (size_t) first * q_rank_, iq_, n);
     lin(B.idx_proj, xn_ + (size_t) first * n_embd_, iw_, n,
         (const uint8_t*) xq_ + (size_t) first * kernels::native_q8_1_bytes(n_embd_));
-    // A prompt batch stays on the card: its products through cuBLAS, with the attention's scratch for them, and
-    // its selection in a kernel.  A few tokens take the kernel that gives a token the same bits in any company,
-    // and the host selects.
-    if (n >= kStageRows) {
-        idx_score_batch(blas_, iq_, iw_, B.idx, score_, score_stride_, idx_dim_, idx_heads_, kpool_, pos, n, akeys_,
-                        akeys_n_, st_);
-        idx_select(score_, score_stride_, sel_, sel_stride_, n_top, kpool_, pos, n, st_);
-        return;
+    // A prompt batch's scores are products through cuBLAS, with the attention's scratch for them.  A few tokens
+    // take the kernel that gives a token the same bits in any company.  At a long context score_ has room for
+    // only some of a batch's tokens, and they take turns.
+    for (int t = 0, c = 0; t < n; t += c) {
+        c = std::min(score_rows_, n - t);
+        const float *q = iq_ + (size_t) t * idx_heads_ * idx_dim_, *w = iw_ + (size_t) t * idx_heads_;
+        if (n >= kStageRows)
+            idx_score_batch(blas_, q, w, B.pool, score_, score_stride_, idx_dim_, idx_heads_, kpool_, pos + t, c,
+                            akeys_, akeys_n_, st_);
+        else
+            idx_score(q, w, B.pool, score_, score_stride_, idx_dim_, idx_heads_, kpool_, pos + t, c, st_);
+        idx_select(score_, score_stride_, sel_ + (size_t) t * sel_stride_, sel_stride_, n_top, kpool_, pos + t, c,
+                   st_);
     }
-    idx_score(iq_, iw_, B.idx, score_, score_stride_, idx_dim_, idx_heads_, kpool_, pos, n, st_);
-    ck(cudaMemcpyAsync(h_score_, score_, (size_t) n * score_stride_ * sizeof(float), cudaMemcpyDeviceToHost,
-                       cs(st_)),
-       "indexer scores");
-    ck(cudaStreamSynchronize(cs(st_)), "indexer scores");
-
-    workers_->run(n, [&](int t) {
-        static thread_local std::vector<int32_t> order;
-        const int64_t at = pos + t, n_pool = (at + 1) / kpool_;
-        order.resize((size_t) n_pool);
-        std::iota(order.begin(), order.end(), 0);
-        const float* sc = h_score_ + (size_t) t * score_stride_;
-        std::partial_sort(order.begin(), order.begin() + n_top, order.end(),
-                          [sc](int32_t a, int32_t b) { return sc[a] != sc[b] ? sc[a] > sc[b] : a < b; });
-        int32_t* sel = h_sel_ + (size_t) t * sel_stride_;
-        for (int i = 0; i < n_top; ++i)
-            for (int k = 0; k < kpool_; ++k) *sel++ = order[(size_t) i] * kpool_ + k;
-        for (int64_t p = n_pool * kpool_; p <= at; ++p) *sel++ = (int32_t) p;
-    });
-    ck(cudaMemcpyAsync(sel_, h_sel_, (size_t) n * sel_stride_ * sizeof(int32_t), cudaMemcpyHostToDevice, cs(st_)),
-       "indexer selection");
 }
 
 // The rows n tokens from position `pos` leave in a sparse-attention layer's caches: the latent the attention
-// reads, and the indexer's key and gate.  xn_ and xq_ hold the layer's input.
+// reads, the indexer's key and gate, and the keys of the pools they fill.  xn_ and xq_ hold the layer's input.
 void Glm5Next::dsa_store(Block& B, int64_t pos, int n) {
     lin(B.kv_a, xn_, t2_, n, xq_);
     rms_norm(t2_, fp(B.kv_a_norm), kv_, kv_rank_, n, rms_eps_, st_);
@@ -430,8 +456,8 @@ void Glm5Next::dsa_store(Block& B, int64_t pos, int n) {
     lin(B.idx_k, xn_, ikr_, n, xq_);
     layer_norm(ikr_, fp(B.idx_k_norm), fp(B.idx_k_norm_b), ik_, idx_dim_, n, norm_eps_, st_);
     lin(B.idx_gate, xn_, ig_, n, xq_);
-    idx_store(ik_, ig_, B.idx, idx_dim_, pos, n, st_);
-    idx_pool(B.idx, fp(B.idx_ape), idx_dim_, kpool_, pos, n, st_);
+    idx_store(ik_, ig_, B.ring, ring_, idx_dim_, pos, n, st_);
+    idx_pool(B.ring, ring_, B.pool, fp(B.idx_ape), idx_dim_, kpool_, pos, n, st_);
 }
 
 void Glm5Next::dsa(Block& B, int64_t pos, int n) {

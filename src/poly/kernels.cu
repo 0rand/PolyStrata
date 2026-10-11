@@ -466,41 +466,41 @@ __global__ void dsa_softmax_kernel(float* score, int n_keys, int top_rows, int k
     for (int j = threadIdx.x; j < n_keys; j += blockDim.x) row[j] = j < n_sel ? row[j] * inv : 0.0f;
 }
 
-// One block per token; `first` is the first token's cache row.
+// One block per token from position pos.
 __global__ void idx_store_kernel(const float* __restrict__ key, const float* __restrict__ gate,
-                                 float* __restrict__ first, int dim) {
+                                 float* __restrict__ ring, int ring_rows, int dim, long long pos) {
     const int d = threadIdx.x;
     if (d >= dim) return;
-    float* row = first + size_t(blockIdx.x) * 3 * dim;
+    float* row = ring + size_t((pos + blockIdx.x) % ring_rows) * 2 * dim;
     row[d] = key[size_t(blockIdx.x) * dim + d];
     row[dim + d] = gate[size_t(blockIdx.x) * dim + d];
 }
 
 // One block per token from position pos; the ones that do not end a pool have nothing to do.
-__global__ void idx_pool_kernel(float* cache, const float* __restrict__ ape, int dim, int kpool, long long pos) {
+__global__ void idx_pool_kernel(const float* __restrict__ ring, int ring_rows, float* __restrict__ pool,
+                                const float* __restrict__ ape, int dim, int kpool, long long pos) {
     const int d = threadIdx.x;
     const long long last = pos + blockIdx.x;
     if (d >= dim || (last + 1) % kpool != 0) return;
-    const float* first = cache + size_t(last - kpool + 1) * 3 * dim;
+    const auto row = [&](int k) { return ring + size_t((last - kpool + 1 + k) % ring_rows) * 2 * dim; };
     float mx = -INFINITY;
-    for (int k = 0; k < kpool; ++k) mx = fmaxf(mx, first[size_t(k) * 3 * dim + dim + d] + ape[d + dim * k]);
+    for (int k = 0; k < kpool; ++k) mx = fmaxf(mx, row(k)[dim + d] + ape[d + dim * k]);
     float sum = 0.0f, acc = 0.0f;
     for (int k = 0; k < kpool; ++k) {
-        const float* row = first + size_t(k) * 3 * dim;
-        const float e = expf(row[dim + d] + ape[d + dim * k] - mx);
+        const float e = expf(row(k)[dim + d] + ape[d + dim * k] - mx);
         sum += e;
-        acc += e * row[d];
+        acc += e * row(k)[d];
     }
-    cache[size_t(last) * 3 * dim + 2 * dim + d] = acc / sum;
+    pool[size_t(last / kpool) * dim + d] = acc / sum;
 }
 
 // One block per pool and token, 32 threads over the indexer heads.
 __global__ void idx_score_kernel(const float* __restrict__ q, const float* __restrict__ w,
-                                 const float* __restrict__ cache, float* __restrict__ score, int score_stride,
+                                 const float* __restrict__ pool, float* __restrict__ score, int score_stride,
                                  int dim, int n_head, int kpool, long long pos, float wscale) {
     const size_t tok = blockIdx.y;
     if (blockIdx.x >= (pos + tok + 1) / kpool) return;   // not a whole pool at this token yet
-    const float* key = cache + (size_t(blockIdx.x) * kpool + kpool - 1) * 3 * dim + 2 * dim;
+    const float* key = pool + size_t(blockIdx.x) * dim;
     q += tok * n_head * dim;
     w += tok * n_head;
     float acc = 0.0f;
@@ -529,7 +529,7 @@ __global__ void idx_weigh_kernel(const float* __restrict__ dot, const float* __r
     score[tok * score_stride + p] = acc;
 }
 
-// A score as an integer: a higher score is a larger one, and -0 is +0, as the host compares them.
+// A score as an integer: a higher score is a larger one, and -0 is +0, as float comparisons have them.
 __device__ __forceinline__ uint32_t idx_key(float s) {
     const uint32_t b = __float_as_uint(s + 0.0f);
     return b & 0x80000000u ? ~b : b | 0x80000000u;
@@ -548,9 +548,8 @@ __device__ __forceinline__ int block_count(int x, int* part) {
 }
 
 // A token's n_top pools with the highest scores, the lower pool first among equals, as rows of its list in that
-// order, then the rows no pool has yet: what the host's partial sort makes of the scores.  One block of 256 a
-// token; a thread has a run of the token's pools.  The block's shared memory holds the chosen pools and then
-// their keys, n_top each.
+// order, then the rows no pool has yet.  One block of 256 a token; a thread has a run of the token's pools.  The
+// block's shared memory holds the chosen pools and then their keys, n_top each.
 __global__ void idx_select_kernel(const float* __restrict__ score, int score_stride, int32_t* __restrict__ sel,
                                   int sel_stride, int n_top, int kpool, long long pos) {
     extern __shared__ uint32_t chosen[];
@@ -1480,18 +1479,20 @@ void dsa_attend(void* blas, const float* q, const uint16_t* cache, const int32_t
     }
 }
 
-void idx_store(const float* key, const float* gate, float* cache, int dim, int64_t pos, int rows, void* stream) {
-    idx_store_kernel<<<rows, 256, 0, cs(stream)>>>(key, gate, cache + size_t(pos) * 3 * dim, dim);
+void idx_store(const float* key, const float* gate, float* ring, int ring_rows, int dim, int64_t pos, int rows,
+               void* stream) {
+    idx_store_kernel<<<rows, 256, 0, cs(stream)>>>(key, gate, ring, ring_rows, dim, (long long) pos);
 }
 
-void idx_pool(float* cache, const float* ape, int dim, int kpool, int64_t pos, int rows, void* stream) {
-    idx_pool_kernel<<<rows, 256, 0, cs(stream)>>>(cache, ape, dim, kpool, (long long) pos);
+void idx_pool(const float* ring, int ring_rows, float* pool, const float* ape, int dim, int kpool, int64_t pos,
+              int rows, void* stream) {
+    idx_pool_kernel<<<rows, 256, 0, cs(stream)>>>(ring, ring_rows, pool, ape, dim, kpool, (long long) pos);
 }
 
-void idx_score(const float* q, const float* w, const float* cache, float* score, int score_stride, int dim,
+void idx_score(const float* q, const float* w, const float* pool, float* score, int score_stride, int dim,
                int n_head, int kpool, int64_t pos, int rows, void* stream) {
     const int n_pool = int((pos + rows) / kpool);   // the last token sees the most
-    idx_score_kernel<<<dim3(n_pool, rows), WARP, 0, cs(stream)>>>(q, w, cache, score, score_stride, dim, n_head,
+    idx_score_kernel<<<dim3(n_pool, rows), WARP, 0, cs(stream)>>>(q, w, pool, score, score_stride, dim, n_head,
                                                                  kpool, (long long) pos,
                                                                  1.0f / std::sqrt(float(dim) * float(n_head)));
 }
@@ -1502,7 +1503,7 @@ void idx_select(const float* score, int score_stride, int32_t* sel, int sel_stri
         score, score_stride, sel, sel_stride, n_top, kpool, (long long) pos);
 }
 
-void idx_score_batch(void* blas, const float* q, const float* w, const float* cache, float* score, int score_stride,
+void idx_score_batch(void* blas, const float* q, const float* w, const float* pool, float* score, int score_stride,
                      int dim, int n_head, int kpool, int64_t pos, int rows, float* work, size_t work_floats,
                      void* stream) {
     const float one = 1.0f, zero = 0.0f;
@@ -1510,13 +1511,10 @@ void idx_score_batch(void* blas, const float* q, const float* w, const float* ca
     if (n_pool == 0) return;
     const int chunk = (int) std::min<size_t>(65535, work_floats / (size_t(n_pool) * n_head));
     if (chunk < 1) throw std::invalid_argument("idx_score_batch: no room for a token's products");
-    // Pool p's key is the third part of cache row kpool * p + kpool - 1: to cuBLAS the pools' keys are a matrix
-    // whose columns lie kpool rows apart.
-    const float* keys = cache + (size_t(kpool) * 3 - 1) * dim;
     for (int first = 0; first < rows; first += chunk) {
         const int c = std::min(chunk, rows - first);
-        blas_ck(cublasSgemm((cublasHandle_t) blas, CUBLAS_OP_T, CUBLAS_OP_N, n_pool, c * n_head, dim, &one, keys,
-                            kpool * 3 * dim, q + size_t(first) * n_head * dim, dim, &zero, work, n_pool),
+        blas_ck(cublasSgemm((cublasHandle_t) blas, CUBLAS_OP_T, CUBLAS_OP_N, n_pool, c * n_head, dim, &one, pool,
+                            dim, q + size_t(first) * n_head * dim, dim, &zero, work, n_pool),
                 "indexer scores");
         idx_weigh_kernel<<<dim3(grid(n_pool, 256), c), 256, 0, cs(stream)>>>(
             work, w + size_t(first) * n_head, score + size_t(first) * score_stride, score_stride, n_pool, n_head,
