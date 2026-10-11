@@ -323,7 +323,7 @@ struct Session {
         CacheOptions o = f.o;
         o.log = stderr;
         o.admit = [floor = (uint64_t) f.min_free_mib << 20](size_t bytes) {
-            return strata::core::conversation_memory_admit(strata::core::conversation_available_memory(), bytes, floor);
+            return strata::core::conversation_memory_admit(strata::core::available_host_bytes(), bytes, floor);
         };
         return o;
     }

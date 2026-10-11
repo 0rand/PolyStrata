@@ -110,7 +110,8 @@ class VisualStudio(unittest.TestCase):
         self.assertEqual(setup.vcvars_toolset(Path("no") / "vcvars64.bat"), "")
 
     def found(self, t, installs):
-        """find_vcvars() with vswhere answering from `installs`: {version range or "": installation path}."""
+        """find_vcvars() for CUDA 13.0 with vswhere answering from `installs`: {version range or "": installation
+        path}.  Without a CUDA version any Visual Studio will do (#881)."""
         vswhere = Path(t) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
         vswhere.parent.mkdir(parents=True, exist_ok=True)
         vswhere.write_text("")
@@ -119,7 +120,7 @@ class VisualStudio(unittest.TestCase):
             return installs.get(cmd[cmd.index("-version") + 1] if "-version" in cmd else "", "")
 
         with mock.patch.dict(setup.os.environ, {"ProgramFiles(x86)": str(t)}), mock.patch.object(setup, "out", out):
-            return setup.find_vcvars()
+            return setup.find_vcvars((13, 0))
 
     def test_2022_before_a_newer_one(self):
         with tempfile.TemporaryDirectory() as t:
